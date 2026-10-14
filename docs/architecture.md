@@ -15,18 +15,25 @@ flowchart TD
     C --> T
     C --> O["ONNX Runtime: reference frontend"]
     E --> A["tts-core: audio and contracts"]
-    W["WASM / Worker"] --> A
+    W["wasm32 / Worker"] --> A
     W --> QS["Optional Qwen speaker encoder"]
     QS --> T
+    W64["wasm64 / Worker"] --> L["Streamed checkpoint loader"]
+    L --> E
 ```
 
 The browser package reports its actual capabilities. A native feature named
 `cuda` or `metal` does not describe browser GPU execution. Large model buffers,
 WASM's address space and copying across JavaScript boundaries require their own
 validation; successful target compilation alone is not a browser performance test.
-The WASM package exposes speaker extraction from explicit configuration and
-weight bytes. It does not instantiate the complete native `Engine` or expose
-full synthesis.
+The wasm32 package exposes audio utilities and optional speaker extraction from
+explicit configuration and weight bytes. The memory64 package uses the same
+binding layer and wraps a complete in-memory Qwen model in `Engine`. It imports
+checkpoint tensors individually, avoiding a contiguous multi-gigabyte JavaScript
+buffer, and computes the same content fingerprint through a streaming hasher.
+Memory64 must be supported by the host engine; it does not supply browser GPU
+acceleration. CosyVoice's native ONNX frontend is not part of this WebAssembly
+boundary. Consult the binding's capability report for the loaded build.
 
 ## Model-specific conditioning
 

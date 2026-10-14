@@ -2532,8 +2532,11 @@ version = "0.1.0"
 dependencies = [
  "candle-core",
  "candle-nn",
+ "candle-tts",
  "getrandom 0.3.4",
+ "js-sys",
  "serde_json",
+ "tokenizers",
  "tts-core",
  "tts-qwen",
  "wasm-bindgen",

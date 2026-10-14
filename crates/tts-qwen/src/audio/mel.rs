@@ -68,10 +68,33 @@ impl MelSpectrogram {
         }
     }
 
-    /// Create a new mel spectrogram extractor
-    pub fn new(config: MelConfig) -> Self {
+    /// Create an extractor, rejecting invalid dimensions and frequency ranges.
+    pub fn new(config: MelConfig) -> Result<Self> {
         let win_length = config.win_length.unwrap_or(config.n_fft);
         let fmax = config.fmax.unwrap_or(config.sample_rate as f32 / 2.0);
+        anyhow::ensure!(
+            config.sample_rate > 0
+                && config.n_fft > 0
+                && config.hop_length > 0
+                && config.hop_length <= config.n_fft
+                && win_length > 0
+                && win_length <= config.n_fft
+                && config.n_mels > 0,
+            "mel dimensions must be positive, with hop and window lengths at most n_fft"
+        );
+        anyhow::ensure!(
+            config.fmin.is_finite()
+                && fmax.is_finite()
+                && config.fmin >= 0.0
+                && config.fmin < fmax
+                && fmax <= config.sample_rate as f32 / 2.0,
+            "mel frequencies require 0 <= fmin < fmax <= sample_rate / 2"
+        );
+        anyhow::ensure!(
+            config.n_mels.checked_add(2).is_some()
+                && config.n_mels.checked_mul(config.n_fft / 2 + 1).is_some(),
+            "mel filterbank dimensions overflow"
+        );
 
         // Compute mel filterbank
         let mel_basis = Self::create_mel_filterbank(
@@ -85,17 +108,17 @@ impl MelSpectrogram {
         // Compute Hann window
         let window = Self::hann_window(win_length);
 
-        Self {
+        Ok(Self {
             config,
             mel_basis,
             window,
-        }
+        })
     }
 
-    /// Compute mel spectrogram from audio samples
-    pub fn compute(&self, samples: &[f32]) -> Vec<Vec<f32>> {
+    /// Compute a mel spectrogram from finite samples long enough for reflection and one frame.
+    pub fn compute(&self, samples: &[f32]) -> Result<Vec<Vec<f32>>> {
         // Compute STFT
-        let stft = self.stft(samples);
+        let stft = self.stft(samples)?;
 
         // Compute power spectrogram
         let power_spec: Vec<Vec<f32>> = stft
@@ -104,12 +127,17 @@ impl MelSpectrogram {
             .collect();
 
         // Apply mel filterbank
-        self.apply_mel_filterbank(&power_spec)
+        let mel = self.apply_mel_filterbank(&power_spec);
+        anyhow::ensure!(
+            mel.iter().flatten().all(|value| value.is_finite()),
+            "mel computation overflowed; input sample magnitude is too large"
+        );
+        Ok(mel)
     }
 
     /// Compute mel spectrogram and return as tensor
     pub fn compute_tensor(&self, samples: &[f32], device: &Device) -> Result<Tensor> {
-        let mel = self.compute(samples);
+        let mel = self.compute(samples)?;
         let n_frames = mel.len();
         let n_mels = self.config.n_mels;
 
@@ -123,11 +151,12 @@ impl MelSpectrogram {
     }
 
     /// Compute log mel spectrogram
-    pub fn compute_log(&self, samples: &[f32]) -> Vec<Vec<f32>> {
-        let mel = self.compute(samples);
-        mel.into_iter()
+    pub fn compute_log(&self, samples: &[f32]) -> Result<Vec<Vec<f32>>> {
+        let mel = self.compute(samples)?;
+        Ok(mel
+            .into_iter()
             .map(|frame| frame.into_iter().map(|v| (v.max(1e-10)).ln()).collect())
-            .collect()
+            .collect())
     }
 
     /// Compute mel spectrogram for the speaker encoder.
@@ -142,12 +171,7 @@ impl MelSpectrogram {
         samples: &[f32],
         device: &Device,
     ) -> anyhow::Result<Tensor> {
-        let required = (self.config.n_fft - self.config.hop_length) / 2;
-        anyhow::ensure!(
-            samples.len() > required && samples.iter().all(|v| v.is_finite()),
-            "speaker mel input must contain more than {required} finite samples"
-        );
-        let stft = self.stft(samples);
+        let stft = self.stft(samples)?;
 
         // Magnitude spectrum (not power)
         let mag_spec: Vec<Vec<f32>> = stft
@@ -162,6 +186,10 @@ impl MelSpectrogram {
 
         // Apply mel filterbank
         let mel = self.apply_mel_filterbank(&mag_spec);
+        anyhow::ensure!(
+            mel.iter().flatten().all(|value| value.is_finite()),
+            "speaker mel computation overflowed; input sample magnitude is too large"
+        );
 
         // Log compression with floor
         let log_mel: Vec<Vec<f32>> = mel
@@ -181,7 +209,7 @@ impl MelSpectrogram {
     }
 
     /// Short-time Fourier transform
-    fn stft(&self, samples: &[f32]) -> Vec<Vec<Complex<f32>>> {
+    fn stft(&self, samples: &[f32]) -> Result<Vec<Vec<Complex<f32>>>> {
         let n_fft = self.config.n_fft;
         let hop_length = self.config.hop_length;
         let win_length = self.window.len();
@@ -189,26 +217,28 @@ impl MelSpectrogram {
         // Reflect-pad signal to match PyTorch's torch.stft with center=False
         // after manual reflect padding: pad = (n_fft - hop_length) / 2
         let pad_length = (n_fft - hop_length) / 2;
-        let mut padded = Vec::with_capacity(pad_length + samples.len() + pad_length);
+        let padded_length = samples
+            .len()
+            .checked_add(pad_length * 2)
+            .ok_or_else(|| anyhow::anyhow!("padded audio length overflow"))?;
+        anyhow::ensure!(
+            samples.len() > pad_length && padded_length >= n_fft,
+            "mel input is too short for reflect padding and one FFT frame"
+        );
+        anyhow::ensure!(
+            samples.iter().all(|value| value.is_finite()),
+            "mel input must be finite"
+        );
+        let mut padded = Vec::with_capacity(padded_length);
 
         // Left reflect padding: mirror from position 1 outward
         for i in (1..=pad_length).rev() {
-            let idx = if i < samples.len() {
-                i
-            } else {
-                samples.len() - 1
-            };
-            padded.push(samples[idx]);
+            padded.push(samples[i]);
         }
         padded.extend_from_slice(samples);
         // Right reflect padding: mirror from position len-2 inward
         for i in 0..pad_length {
-            let idx = if samples.len() >= 2 + i {
-                samples.len() - 2 - i
-            } else {
-                0
-            };
-            padded.push(samples[idx]);
+            padded.push(samples[samples.len() - 2 - i]);
         }
 
         // Setup FFT
@@ -246,7 +276,7 @@ impl MelSpectrogram {
             result.push(frame);
         }
 
-        result
+        Ok(result)
     }
 
     /// Apply mel filterbank to power spectrogram
@@ -366,6 +396,91 @@ mod tests {
     use candle_core::Device;
 
     #[test]
+    fn invalid_mel_configurations_return_errors() {
+        for config in [
+            MelConfig {
+                sample_rate: 0,
+                ..Default::default()
+            },
+            MelConfig {
+                n_fft: 0,
+                ..Default::default()
+            },
+            MelConfig {
+                hop_length: 0,
+                ..Default::default()
+            },
+            MelConfig {
+                hop_length: 401,
+                ..Default::default()
+            },
+            MelConfig {
+                win_length: Some(0),
+                ..Default::default()
+            },
+            MelConfig {
+                win_length: Some(401),
+                ..Default::default()
+            },
+            MelConfig {
+                n_mels: 0,
+                ..Default::default()
+            },
+            MelConfig {
+                n_mels: usize::MAX,
+                ..Default::default()
+            },
+            MelConfig {
+                fmin: f32::NAN,
+                ..Default::default()
+            },
+            MelConfig {
+                fmax: Some(f32::INFINITY),
+                ..Default::default()
+            },
+            MelConfig {
+                fmin: -1.0,
+                ..Default::default()
+            },
+            MelConfig {
+                fmin: 100.0,
+                fmax: Some(100.0),
+                ..Default::default()
+            },
+            MelConfig {
+                fmax: Some(12_001.0),
+                ..Default::default()
+            },
+        ] {
+            assert!(MelSpectrogram::new(config).is_err());
+        }
+    }
+
+    #[test]
+    fn invalid_pcm_is_rejected_by_every_mel_entry_point() {
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
+        for samples in [
+            vec![],
+            vec![0.0],
+            vec![0.0; 159],
+            vec![f32::NAN; 400],
+            vec![f32::MAX; 400],
+        ] {
+            assert!(mel.compute(&samples).is_err());
+            assert!(mel.compute_log(&samples).is_err());
+            assert!(mel.compute_tensor(&samples, &Device::Cpu).is_err());
+            assert!(
+                mel.compute_for_speaker_encoder(&samples, &Device::Cpu)
+                    .is_err()
+            );
+        }
+        assert_eq!(mel.compute(&[0.0; 160]).unwrap().len(), 1);
+        let speaker = MelSpectrogram::new(MelSpectrogram::speaker_encoder()).unwrap();
+        assert!(speaker.compute(&[0.0; 384]).is_err());
+        assert_eq!(speaker.compute(&[0.0; 385]).unwrap().len(), 1);
+    }
+
+    #[test]
     fn test_mel_config_default() {
         let config = MelConfig::default();
         assert_eq!(config.sample_rate, 24000);
@@ -413,7 +528,7 @@ mod tests {
 
     #[test]
     fn test_mel_filterbank_shape() {
-        let mel = MelSpectrogram::new(MelConfig::default());
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
         assert_eq!(mel.mel_basis.len(), 128);
         assert_eq!(mel.mel_basis[0].len(), 201); // n_fft/2 + 1 = 400/2 + 1
     }
@@ -423,7 +538,8 @@ mod tests {
         let mel = MelSpectrogram::new(MelConfig {
             n_mels: 4,
             ..Default::default()
-        });
+        })
+        .unwrap();
         // Each filter should have triangular shape (non-negative values)
         for filter in &mel.mel_basis {
             for &val in filter {
@@ -434,9 +550,9 @@ mod tests {
 
     #[test]
     fn test_compute_mel_silence() {
-        let mel = MelSpectrogram::new(MelConfig::default());
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
         let samples = vec![0.0f32; 24000];
-        let result = mel.compute(&samples);
+        let result = mel.compute(&samples).unwrap();
         assert!(!result.is_empty());
         assert_eq!(result[0].len(), 128);
         // Silence should produce very small values
@@ -449,12 +565,12 @@ mod tests {
 
     #[test]
     fn test_compute_mel_sine_wave() {
-        let mel = MelSpectrogram::new(MelConfig::default());
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
         // Generate 440Hz sine wave (A4 note)
         let samples: Vec<f32> = (0..24000)
             .map(|i| (2.0 * PI * 440.0 * i as f32 / 24000.0).sin())
             .collect();
-        let result = mel.compute(&samples);
+        let result = mel.compute(&samples).unwrap();
         assert!(!result.is_empty());
         // Should have non-zero energy
         let total_energy: f32 = result.iter().flat_map(|frame| frame.iter()).sum();
@@ -463,11 +579,11 @@ mod tests {
 
     #[test]
     fn test_compute_log_mel() {
-        let mel = MelSpectrogram::new(MelConfig::default());
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
         let samples: Vec<f32> = (0..24000)
             .map(|i| (2.0 * PI * 440.0 * i as f32 / 24000.0).sin())
             .collect();
-        let result = mel.compute_log(&samples);
+        let result = mel.compute_log(&samples).unwrap();
         assert!(!result.is_empty());
         // Log mel should have negative values (log of small numbers)
         let has_negative = result
@@ -479,7 +595,7 @@ mod tests {
 
     #[test]
     fn test_compute_tensor() {
-        let mel = MelSpectrogram::new(MelConfig::default());
+        let mel = MelSpectrogram::new(MelConfig::default()).unwrap();
         let samples = vec![0.0f32; 4800]; // 0.2 seconds
         let device = Device::Cpu;
         let tensor = mel.compute_tensor(&samples, &device).unwrap();
@@ -493,10 +609,11 @@ mod tests {
             n_fft: 400,
             hop_length: 160,
             ..Default::default()
-        });
+        })
+        .unwrap();
         // With padding, number of frames should be predictable
         let samples = vec![0.0f32; 1600]; // 10 hops
-        let result = mel.compute(&samples);
+        let result = mel.compute(&samples).unwrap();
         assert!(!result.is_empty());
     }
 }

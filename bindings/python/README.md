@@ -6,9 +6,7 @@ Concurrent operations on one `Engine` are serialized; create separate engines wh
 independent inference state is needed.
 
 ```sh
-python -m pip install 'maturin>=1.12,<2'
-python -m maturin develop --release --manifest-path bindings/python/Cargo.toml
-python bindings/python/tests/smoke.py
+python -m pip install candle-tts
 ```
 
 ```python
@@ -69,3 +67,11 @@ Prompt JSON is limited to 16 MiB and options JSON to 64 KiB before decoding.
 CPython 3.10+ uses the stable `abi3` ABI; free-threaded CPython wheels are not
 included in this distribution. Model support and numerical validation status are
 documented in the repository root.
+
+## Build from source
+
+```sh
+python -m pip install 'maturin>=1.12,<2'
+python -m maturin develop --release --manifest-path bindings/python/Cargo.toml
+python bindings/python/tests/smoke.py
+```

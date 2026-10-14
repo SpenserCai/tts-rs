@@ -1,4 +1,4 @@
-//! Deterministic full-checkpoint probe for numerical and end-to-end verification.
+//! Full-checkpoint probe for numerical verification and sampled listening checks.
 use anyhow::{Result, ensure};
 use candle_core::{DType, Device};
 use serde_json::json;
@@ -8,8 +8,8 @@ use tts_qwen::{AudioBuffer, Language, Qwen3TTS, SynthesisOptions};
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     ensure!(
-        (5..=7).contains(&args.len()),
-        "usage: synthesis_oracle MODEL_DIR REFERENCE_WAV TEXT OUTPUT_JSON MAX_NEW_TOKENS [LANGUAGE] [REFERENCE_TEXT]"
+        (5..=8).contains(&args.len()),
+        "usage: synthesis_oracle MODEL_DIR REFERENCE_WAV TEXT OUTPUT_JSON MAX_NEW_TOKENS [LANGUAGE] [REFERENCE_TEXT] [greedy|sample]"
     );
     let start = Instant::now();
     let model = Qwen3TTS::from_pretrained(&args[0], Device::Cpu)?;
@@ -17,10 +17,16 @@ fn main() -> Result<()> {
     let reference = AudioBuffer::load(&args[1])?;
     let reference_text = args.get(6).map(String::as_str);
     let prompt = model.create_voice_clone_prompt(&reference, reference_text)?;
+    let sampling = args.get(7).map(String::as_str).unwrap_or("greedy");
+    ensure!(
+        matches!(sampling, "greedy" | "sample"),
+        "sampling must be greedy or sample"
+    );
+    let max_length = args[4].parse()?;
     let options = SynthesisOptions {
-        max_length: args[4].parse()?,
-        temperature: 0.0,
-        subtalker_temperature: 0.0,
+        max_length,
+        temperature: if sampling == "greedy" { 0.0 } else { 0.9 },
+        subtalker_temperature: if sampling == "greedy" { 0.0 } else { 0.9 },
         seed: Some(42),
         ..Default::default()
     };
@@ -59,7 +65,9 @@ fn main() -> Result<()> {
     let frames = codes.len();
     let result = json!({
         "schema_version": 1,
-        "metadata": {"implementation": "tts-qwen", "device": "cpu", "dtype": "float32", "load_seconds": load_seconds, "inference_seconds": inference_seconds, "sample_rate": audio.sample_rate},
+        "metadata": {"implementation": "tts-qwen", "device": "cpu", "dtype": "float32", "load_seconds": load_seconds, "inference_seconds": inference_seconds, "sample_rate": audio.sample_rate,
+            "sampling": sampling, "seed": 42, "max_new_tokens": max_length,
+            "termination_reason": if frames < max_length - 1 { "eos" } else { "token_budget_or_eos_at_limit" }},
         "tensors": {
             "speaker_embedding": {"shape": prompt.speaker_embedding.dims(), "dtype": "float32", "data": prompt.speaker_embedding.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?},
             "audio_codes": {"shape": [frames, 16], "dtype": "uint32", "data": codes.into_iter().flatten().collect::<Vec<_>>()},

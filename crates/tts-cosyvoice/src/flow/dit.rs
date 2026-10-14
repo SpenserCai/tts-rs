@@ -73,6 +73,9 @@ impl Attention {
 
     pub fn forward(&self, x: &Tensor, mask: Option<&Tensor>, rope: &Tensor) -> Result<Tensor> {
         let (batch, seq_len, _) = x.dims3()?;
+        if seq_len == 0 {
+            candle::bail!("attention requires a nonempty sequence");
+        }
 
         // QKV projections
         let q = self.to_q.forward(x)?; // [B, T, H*D]
@@ -103,6 +106,7 @@ impl Attention {
         let attn_weights = (q.matmul(&k.transpose(D::Minus2, D::Minus1)?)? * self.scale)?;
 
         // Apply mask if provided
+        let mut output_mask = None;
         let attn_weights = match mask {
             Some(m) => {
                 let mask = match m.rank() {
@@ -112,6 +116,14 @@ impl Attention {
                     _ => candle::bail!("attention mask requires rank 2, 3, or 4"),
                 }
                 .broadcast_as(attn_weights.shape())?;
+                // Upstream clears padded query positions after the projection.
+                output_mask = Some(
+                    mask.narrow(1, 0, 1)?
+                        .squeeze(1)?
+                        .narrow(1, seq_len - 1, 1)?
+                        .squeeze(1)?
+                        .unsqueeze(2)?,
+                );
                 let neg_inf = Tensor::full(
                     f32::NEG_INFINITY,
                     attn_weights.shape(),
@@ -133,7 +145,13 @@ impl Attention {
             self.num_heads * self.head_dim,
         ))?;
 
-        self.to_out.forward(&attn_output)
+        let output = self.to_out.forward(&attn_output)?;
+        match output_mask {
+            Some(mask) => mask
+                .broadcast_as(output.shape())?
+                .where_cond(&output, &output.zeros_like()?),
+            None => Ok(output),
+        }
     }
 }
 
@@ -268,14 +286,17 @@ impl DiT {
     pub fn forward(
         &self,
         x: &Tensor,
-        _mask: &Tensor,
+        mask: &Tensor,
         mu: &Tensor,
         t: &Tensor,
         spks: &Tensor,
         cond: &Tensor,
         streaming: bool,
     ) -> Result<Tensor> {
-        let (_batch, _, seq_len) = x.dims3()?;
+        let (batch, _, seq_len) = x.dims3()?;
+        if mask.dims() != [batch, 1, seq_len] || seq_len == 0 {
+            candle::bail!("DiT requires a nonempty [batch, 1, frames] padding mask");
+        }
 
         // Transpose to [B, T, C]
         let x = x.transpose(1, 2)?;
@@ -291,17 +312,23 @@ impl DiT {
         // RoPE
         let rope = self.rotary_embed.forward(seq_len, x.device(), x.dtype())?;
 
-        // Attention mask (causal for streaming)
+        // Padding is independent of the chunk mask and remains active offline.
+        let valid = mask.ne(0.0)?.unsqueeze(1)?;
         let attn_mask = if streaming {
-            Some(self.create_chunk_mask(seq_len, x.device())?)
+            valid.broadcast_mul(
+                &self
+                    .create_chunk_mask(seq_len, x.device())?
+                    .unsqueeze(0)?
+                    .unsqueeze(0)?,
+            )?
         } else {
-            None
+            valid.broadcast_as((batch, 1, seq_len, seq_len))?
         };
 
         // Transformer blocks
         let mut x = x;
         for block in &self.transformer_blocks {
-            x = block.forward(&x, &t_emb, attn_mask.as_ref(), &rope)?;
+            x = block.forward(&x, &t_emb, Some(&attn_mask), &rope)?;
         }
 
         // Final norm and projection
@@ -364,6 +391,12 @@ mod tests {
         assert_eq!(output.dims(), [2, 2, 4]);
         for batch in output.to_vec3::<f32>()? {
             assert_eq!(batch[0], [1., 0., 0., 0.]);
+        }
+        let padding_mask = Tensor::from_slice(&[1u8, 0, 1, 0], (2, 2), &device)?;
+        let padded = attention.forward(&x, Some(&padding_mask), &rope)?;
+        for batch in padded.to_vec3::<f32>()? {
+            assert_eq!(batch[0], [1., 0., 0., 0.]);
+            assert_eq!(batch[1], [0., 0., 0., 0.]);
         }
         Ok(())
     }

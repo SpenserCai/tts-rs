@@ -90,18 +90,39 @@ the same runtime's HiFT waveform passed on 15,360 samples, with maximum absolute
 error `2.504e-6`. These
 observations do not certify every intermediate tensor, input, language or device.
 
-CosyVoice flow does not pass the current acceptance gate: the official-runtime
-default comparison failed on 124 of 1,280 mel values (`max_abs=1.201e-3`). The
-official implementation itself also fails that strict gate when switching only
-its CPU attention backend from SDPA to MATH. Both failures are retained rather
-than widening the tolerance from one example.
+CosyVoice's complete native flow path is implemented. Its strict float32
+acceptance remains input-dependent. The historical official-runtime default
+comparison failed on 124 of 1,280 mel values (`max_abs=1.201e-3`). Subsequent
+source review corrected two real semantics issues locally: DiT now respects
+padding masks and clears masked attention projections; RoPE evaluates power and
+reciprocal in float32, matching upstream. No Candle fork or full-model float64
+promotion is involved.
 
-A separate coupled check feeds each implementation's own flow mel into HiFT with
+The [flow diagnosis](../tests/fixtures/cosyvoice-flow-diagnostics.json) records
+two token slices of the same public analytic input after those repairs. For
+8 prompt + 8 target tokens, 51 of 1,280 mel values still fail the original gate
+(`max_abs=1.125e-3`, `RMSE=1.218e-4`). The official implementation itself fails
+on 94 values when switching only CPU attention from SDPA to MATH. For 4 + 4
+tokens, all 640 mel values pass against both official backends.
+
+First-step layer traces locate the divergence: conditioning, input embeddings,
+and the first two blocks pass; both Candle-versus-official and official
+SDPA-versus-MATH first exceed the gate in block 2 (zero based). Later residual
+outputs amplify the differences before final normalization reduces them. This
+supports float32 attention/reduction roundoff accumulation as the explanation
+for the remaining observed error, rather than a missing operator or stage. It
+is not proof for every input. All failed comparisons remain recorded, and the
+threshold is unchanged. Use `export_cosyvoice_flow.py --layerwise` and pass
+`--layerwise` as the final argument to `flow_oracle` to reproduce the optional
+first-step traces; normal evaluation avoids that extra replay and artifact size.
+
+A separate earlier coupled check feeds each implementation's own flow mel into HiFT with
 identical serialized source noise. On this 7,680-sample public fixture, Candle
 versus official SDPA measured waveform RMSE `1.624e-4` and SNR `53.97 dB`; official
 SDPA versus MATH measured RMSE `1.557e-3` and SNR `34.33 dB`. This bounds one
 observed downstream effect, not perceptual quality or universal equivalence.
-The coupled waveform still fails strict elementwise parity.
+That coupled waveform failed strict elementwise parity; it has not been rerun
+with the subsequent RoPE/padding repairs.
 
 ## Strict comparisons
 
@@ -173,9 +194,19 @@ Runtime 1.24+ through `ORT_DYLIB_PATH`. Missing runtime libraries fail explicitl
 
 WASM is validated separately. Query its capability report. The official Qwen
 0.6B checkpoint expands to more than 4 GiB of float32 parameters across the main
-model and codec, before caches and activations. Full-model browser synthesis
-therefore needs a memory-saving implementation such as quantization; successful
-speaker extraction does not imply complete TTS fits in wasm32.
+model and codec, before caches and activations. The wasm32 package provides audio
+and speaker components; the separate memory64 package loads and executes the
+full Qwen pipeline using explicit model bytes.
+
+The [memory64 validation record](../tests/fixtures/qwen-memory64-validation.json)
+documents execution of the published web module on Node 24.19.0/Linux x64. The
+same analytic tone, text and greedy 20-token budget used by native x-vector E2E
+produced 36,480 finite samples. Maximum waveform error was `5.271e-9` against
+official Python and `5.180e-9` against native Rust; every value passed the existing
+gate. Peak process RSS was 6,248,228 KiB. A separate test allocated a Rust object
+above 4 GiB and round-tripped its samples through JavaScript. This evidence does
+not certify browser engines, memory64 ICL, natural EOS, voice quality or other
+checkpoints; the full-model fixture deliberately stops at a 20-token budget.
 
 Voice recordings and extracted personal prompts stay outside this public
 repository. CI fixtures use synthetic signals or explicitly documented public

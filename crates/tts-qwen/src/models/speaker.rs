@@ -403,7 +403,7 @@ impl SpeakerEncoder {
         let device = vb.device().clone();
 
         let mel_config = MelSpectrogram::speaker_encoder();
-        let mel_extractor = MelSpectrogram::new(mel_config);
+        let mel_extractor = MelSpectrogram::new(mel_config)?;
 
         // blocks[0]: initial TDNN (mel_dim → enc_channels[0])
         let initial_tdnn = TimeDelayNetBlock::new(

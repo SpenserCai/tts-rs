@@ -14,6 +14,7 @@ import sys
 import textwrap
 
 from package_licenses import stage, verify
+from version import check as check_version
 
 ROOT = Path(__file__).resolve().parents[1]
 BINDINGS = ("tts-python", "tts-node", "tts-wasm")
@@ -40,6 +41,7 @@ def strict_environment() -> dict[str, str]:
 
 def rust_checks(device: str) -> None:
     env = strict_environment()
+    run(sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", env=env)
     verify()
     run("cargo", "fmt", "--all", "--check", env=env)
     for feature in (None, "qwen", "cosyvoice"):
@@ -142,6 +144,7 @@ def main() -> None:
     offline.add_argument("--install-if-missing", action="store_true",
                          help="Explicitly install libseccomp2 with apt on the hosted Ubuntu runner")
     args = parser.parse_args()
+    check_version()
     if args.command == "rust":
         rust_checks(args.device)
     elif args.command == "offline-reference":

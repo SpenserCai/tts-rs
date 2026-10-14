@@ -29,6 +29,15 @@ The converter uses the same weight-normalization primitive as the pinned Python
 reference. Linear source interpolation and reflective STFT padding follow the
 official operations without substituting average pooling or zero padding.
 
+RoPE evaluates both the inverse-frequency power and reciprocal in float32, as
+the pinned implementation does. DiT applies the input padding mask in offline
+and chunked attention and clears masked query outputs after projection.
+
+The audio frontend follows the pinned torchaudio 2.3.1 runtime: resampling
+uses float64-designed, float32-cached sinc kernels and a ceil output length;
+Kaldi Povey windows and mel-bank tensor operations use float32 staging.
+Backend logarithm, FFT and reduction kernels can still differ in rounding.
+
 ## Validation boundary
 
 Component tests and compilation do not establish pretrained synthesis parity.

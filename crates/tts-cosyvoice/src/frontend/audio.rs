@@ -609,8 +609,9 @@ impl KaldiFbank {
         (0..size)
             .map(|i| {
                 // Non-periodic hann window: denominator is (size - 1)
-                let hann = 0.5 - 0.5 * (2.0 * PI * i as f64 / (size - 1) as f64).cos();
-                hann.powf(0.85) as f32
+                let angle = i as f32 * (2.0 * PI / (size - 1) as f64) as f32;
+                let hann = 0.5f32 - 0.5f32 * angle.cos();
+                hann.powf(0.85)
             })
             .collect()
     }
@@ -646,13 +647,16 @@ impl KaldiFbank {
         //   center_mel = mel_low + (m + 1) * mel_freq_delta
         //   right_mel = mel_low + (m + 2) * mel_freq_delta
         for m in 0..n_mels {
-            let left_mel = mel_low + m as f64 * mel_freq_delta;
-            let center_mel = mel_low + (m + 1) as f64 * mel_freq_delta;
-            let right_mel = mel_low + (m + 2) as f64 * mel_freq_delta;
+            // Scalar endpoints are computed in Python float, then tensor arithmetic
+            // uses float32 in torchaudio.compliance.kaldi.get_mel_banks.
+            let left_mel = mel_low as f32 + m as f32 * mel_freq_delta as f32;
+            let center_mel = mel_low as f32 + (m + 1) as f32 * mel_freq_delta as f32;
+            let right_mel = mel_low as f32 + (m + 2) as f32 * mel_freq_delta as f32;
 
             for k in 0..n_fft_bins {
                 // Convert bin to mel: mel(k * fft_bin_width)
-                let k_mel = hz_to_mel(k as f64 * fft_bin_width);
+                let hz = k as f32 * fft_bin_width as f32;
+                let k_mel = 1127.0f32 * (1.0f32 + hz / 700.0f32).ln();
 
                 // Compute triangular filter weight in mel domain
                 // up_slope = (mel - left_mel) / (center_mel - left_mel)
@@ -662,7 +666,7 @@ impl KaldiFbank {
                 let down_slope = (right_mel - k_mel) / (right_mel - center_mel);
                 let weight = up_slope.min(down_slope).max(0.0);
 
-                filters[m * (n_fft_bins + 1) + k] = weight as f32;
+                filters[m * (n_fft_bins + 1) + k] = weight;
             }
             // Nyquist bin (k = n_fft_bins) is left as 0
         }
@@ -672,8 +676,9 @@ impl KaldiFbank {
 
     /// Extract Fbank features
     ///
-    /// Matches torchaudio.compliance.kaldi.fbank exactly:
-    /// Per-frame processing order: DC removal → pre-emphasis → window → FFT
+    /// Follows the torchaudio.compliance.kaldi.fbank operation order:
+    /// DC removal → pre-emphasis → window → FFT. CPU FFT and reduction kernels
+    /// can differ numerically from PyTorch despite matching float32 staging.
     #[allow(clippy::needless_range_loop)]
     pub fn forward(&self, audio: &Tensor) -> Result<Tensor> {
         let samples: Vec<f32> = audio.flatten_all()?.to_dtype(DType::F32)?.to_vec1()?;
@@ -771,7 +776,8 @@ pub fn kaldi_fbank(audio: &Tensor, n_mels: usize) -> Result<Tensor> {
 
 /// High-quality audio resampling using windowed sinc interpolation
 ///
-/// This implementation matches torchaudio.functional.resample with sinc_interp_hann method.
+/// Follows torchaudio.transforms.Resample with the sinc_interp_hann method.
+/// Kernels are designed in float64, cached as float32, and applied in float32.
 /// The algorithm uses bandlimited interpolation with a Hann-windowed sinc function.
 ///
 /// # Algorithm
@@ -837,11 +843,15 @@ pub fn resample_sinc(
     // Build resampling kernels for each phase
     // We need new_freq different kernels (one for each output phase)
     let kernel_size = 2 * width + orig_freq;
-    let mut kernels: Vec<Vec<f64>> = Vec::with_capacity(new_freq);
+    // CosyVoice uses torchaudio.transforms.Resample: design in float64,
+    // then cache the kernel and run convolution in float32.
+    let mut kernels: Vec<Vec<f32>> = Vec::with_capacity(new_freq);
 
     for phase in 0..new_freq {
         let mut kernel = Vec::with_capacity(kernel_size);
-        let phase_offset = -(phase as f64) / new_freq as f64;
+        // The phase arange is integer in torchaudio and true division first
+        // produces float32, before adding the float64 kernel positions.
+        let phase_offset = (-(phase as f32) / new_freq as f32) as f64;
 
         for k in 0..kernel_size {
             let idx = (k as i64 - width as i64) as f64 / orig_freq as f64;
@@ -851,30 +861,26 @@ pub fn resample_sinc(
             let t_clamped = t.clamp(-(lowpass_filter_width as f64), lowpass_filter_width as f64);
 
             // Hann window: cos²(π * t / (2 * width))
-            let window = (t_clamped * PI / (2.0 * lowpass_filter_width as f64))
+            let window = (t_clamped * PI / lowpass_filter_width as f64 / 2.0)
                 .cos()
                 .powi(2);
 
             // Sinc function: sin(π * t) / (π * t), with sinc(0) = 1
             let t_pi = t_clamped * PI;
-            let sinc = if t_pi.abs() < 1e-10 {
-                1.0
-            } else {
-                t_pi.sin() / t_pi
-            };
+            let sinc = if t_pi == 0.0 { 1.0 } else { t_pi.sin() / t_pi };
 
             // Combined kernel with scaling
             let scale = base_freq / orig_freq as f64;
-            kernel.push(sinc * window * scale);
+            kernel.push((sinc * (window * scale)) as f32);
         }
         kernels.push(kernel);
     }
 
     // Pad input signal
     let padded_len = samples.len() + 2 * width + orig_freq;
-    let mut padded = vec![0.0f64; padded_len];
+    let mut padded = vec![0.0f32; padded_len];
     for (i, &s) in samples.iter().enumerate() {
-        padded[width + i] = s as f64;
+        padded[width + i] = s;
     }
 
     // Calculate output length
@@ -892,19 +898,15 @@ pub fn resample_sinc(
         let in_base = (out_idx / new_freq) * orig_freq;
 
         // Convolve
-        let mut sum = 0.0f64;
+        let mut sum = 0.0f32;
         for (k, &w) in kernel.iter().enumerate() {
             let in_idx = in_base + k;
             if in_idx < padded_len {
                 sum += padded[in_idx] * w;
             }
         }
-        resampled.push(sum as f32);
+        resampled.push(sum);
     }
-
-    // Trim to expected length
-    let expected_len = (samples.len() as f64 * to_sr as f64 / from_sr as f64).round() as usize;
-    resampled.truncate(expected_len);
 
     let len = resampled.len();
     Tensor::from_vec(resampled, len, device)
@@ -939,6 +941,59 @@ mod tests {
         assert!(mel.dim(2)? > 0);
 
         Ok(())
+    }
+
+    #[test]
+    fn resample_matches_pinned_torchaudio_and_keeps_fractional_tail() -> Result<()> {
+        // torchaudio 2.3.1 transforms.Resample, float32 on CPU. Fractional
+        // output lengths round up; the single-sample case must not become empty.
+        let input = Tensor::from_slice(&[1.0f32, -0.5, 0.25, 0.125], 4, &Device::Cpu)?;
+        for (from, to, expected) in [
+            (
+                24_000,
+                16_000,
+                vec![0.494_285_82, -0.128_965_17, 0.204_626_05],
+            ),
+            (
+                16_000,
+                24_000,
+                vec![
+                    0.984_078_05,
+                    -0.036_942_02,
+                    -0.502_387_46,
+                    0.236_456_65,
+                    0.337_781_5,
+                    -0.013_394_259,
+                ],
+            ),
+        ] {
+            let actual = resample(&input, from, to)?.to_vec1::<f32>()?;
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.iter().zip(expected) {
+                assert!((actual - expected).abs() < 2e-7);
+            }
+        }
+        let single = Tensor::from_slice(&[1.0f32], 1, &Device::Cpu)?;
+        let actual = resample(&single, 48_000, 16_000)?.to_vec1::<f32>()?;
+        assert_eq!(actual.len(), 1);
+        assert!((actual[0] - 0.33).abs() < 2e-7);
+        Ok(())
+    }
+
+    #[test]
+    fn kaldi_povey_window_follows_float32_reference() {
+        // torchaudio 2.3.1: non-periodic Hann.pow(0.85).
+        // F64 evaluation followed by a final cast changes these constants.
+        let window = KaldiFbank::create_povey_window(400);
+        for (index, expected) in [
+            (1, 0.000_265_134_56f32),
+            (17, 0.032_588_01),
+            (99, 0.549_210_4),
+            (198, 0.999_881_45),
+            (300, 0.549_210_55),
+        ] {
+            assert!((window[index] - expected).abs() < 2e-7);
+        }
     }
 
     #[test]

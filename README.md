@@ -19,10 +19,10 @@ Qwen3-TTS · CosyVoice3 · Python · Node.js · WebAssembly
 Candle. It separates model-specific voice conditioning and speech synthesis from
 audio utilities, application interfaces, and language runtimes.
 
-The repository is named **tts-rs**. The Rust package is **candle-tts**, because the
-`tts-rs` registry name belongs to a different project. This is a pre-release
-implementation; consult the validation evidence before selecting a deployment.
-No model weights or voice recordings are included.
+The repository is named **tts-rs**; the Rust and Python package is **candle-tts**.
+Models run locally, and model weights and recordings stay outside the packages.
+Choose a model and runtime from the support matrix below; numerical evidence is
+recorded per component and device.
 
 Measured CPU comparisons are recorded in the
 [validation baseline](tests/fixtures/validation-baseline.json), with the exact
@@ -30,11 +30,13 @@ scope, upstream revision, tolerances and errors. Component checks, full synthesi
 checks and voice quality are distinct; the support table below states which
 platforms have actually been exercised.
 
-Qwen's bounded CPU x-vector and ICL synthesis comparisons pass the strict tensor
-gate. CosyVoice's official-runtime language-model and HiFT stage comparisons also
-pass; its float32 flow and coupled acoustic path still fail the same elementwise
-threshold. The baseline records those failures alongside the official Python
-attention-kernel variation. Do not treat them as full CosyVoice waveform parity.
+Both native pipelines implement reference conditioning and speech synthesis.
+Qwen's bounded CPU x-vector and ICL comparisons pass the strict tensor gate.
+CosyVoice's official-runtime language-model and HiFT comparisons pass; Flow's
+strict float32 agreement depends on the test input, with remaining differences
+recorded alongside variation between the official Python attention kernels.
+See [numerical validation](docs/validation.md) for the tested boundaries; complete
+CosyVoice waveform equivalence is not claimed.
 
 ## What belongs where
 
@@ -54,11 +56,9 @@ audio tokens, mel features and a matching transcript.
 
 ## Rust
 
-Until a registry release is published, use the repository dependency:
-
 ```toml
 [dependencies]
-candle-tts = { git = "https://github.com/SpenserCai/tts-rs", branch = "feat/modular-candle-tts" }
+candle-tts = "0.1"
 ```
 
 ```rust,no_run
@@ -85,12 +85,55 @@ the unified voice-prompt API targets cloning, not every model-specific mode.
 
 ## Bindings
 
-Build instructions and executable smoke tests live next to each binding:
+Install the native CPU packages:
+
+```sh
+python -m pip install candle-tts
+npm install @spensercai/tts-rs
+```
+
+Python requires CPython 3.10+; Node.js requires 22+. Both expose the same model
+families, explicit device selection and portable voice-prompt JSON:
+
+```python
+from candle_tts import Engine
+
+engine = Engine.load("models/qwen-base", "qwen3", "cpu")
+# reference_pcm: mono floating-point samples at the stated sample rate.
+voice = engine.extract_voice(reference_pcm, 24000, None)
+speech = engine.synthesize("Hello from Python.", voice)
+samples, sample_rate = speech.samples, speech.sample_rate
+```
+
+```js
+import { loadEngine } from '@spensercai/tts-rs'
+
+const engine = await loadEngine('models/qwen-base', 'qwen3', 'cpu')
+// referencePcm: Float32Array of mono PCM at the stated sample rate.
+const voice = await engine.extractVoice(referencePcm, 24000)
+const speech = await engine.synthesize('Hello from Node.js.', voice)
+// speech.samples: Float32Array; speech.sampleRate: number
+```
+
+Python releases the GIL while model work runs; Node dispatches it to worker
+threads. Keep the loaded engine and extracted voice prompt for repeated requests.
+Use `cosyvoice3` with a converted model and the reference transcript to select
+CosyVoice. Prompts are specific to the model checkpoint that created them.
+
+Runtime details, source builds and executable smoke tests live next to each binding:
 
 - [Python](bindings/python/README.md): PyO3 + maturin; import `candle_tts`.
 - [Node.js](bindings/node/README.md): napi-rs; asynchronous native model work.
 - [WASM](bindings/wasm/README.md): wasm-bindgen; query `capabilities()` rather than
   assuming that a browser build has native accelerator or full-model support.
+
+WebAssembly has two explicit packages: `@spensercai/tts-wasm` provides portable
+audio operations and Qwen speaker extraction using 32-bit memory;
+`@spensercai/tts-wasm64` provides Qwen synthesis using WebAssembly Memory64.
+The latter requires a Memory64-capable runtime, Node.js 24+ for Node use, and
+enough physical memory for weights, caches and activations. Neither package
+bundles weights or implements CosyVoice's ONNX frontend. Load model bytes
+explicitly and run inference in a worker; see the [WASM guide](bindings/wasm/README.md).
 
 CPU is the default. `--features cuda` requires an NVIDIA CUDA toolchain;
 `--features metal` targets Apple Silicon. Device selection is explicit and errors
@@ -103,7 +146,8 @@ at once. CUDA/Metal parity must be measured on that hardware.
 | Windows x64 CPU | Native Rust / Python / Node build configuration | Manual matrix; requires a Windows run |
 | macOS ARM CPU / Metal | Native build configuration and explicit Metal feature | Manual matrix; numerical GPU checks require hardware |
 | Linux CUDA | Explicit native feature | Opt-in CUDA runner; not certified by CPU tests |
-| WASM | Audio utilities and optional Qwen speaker extraction | Real speaker-weight CPU comparison; no full synthesis |
+| WASM32 | Audio utilities and Qwen speaker extraction | Real speaker-weight CPU comparison |
+| WASM64 | Memory64 Qwen synthesis with explicit model bytes | Node 24 full bounded Qwen waveform parity; real JS/Rust transfer above 4 GiB |
 
 The Linux Node release build targets Ubuntu 24.04 / glibc 2.39 or newer. Python
 Linux release wheels target manylinux 2.28. ONNX Runtime is an explicit external
@@ -129,6 +173,10 @@ python scripts/ci.py rust
 python scripts/ci.py bindings --kind python
 python scripts/ci.py bindings --kind node
 python scripts/ci.py bindings --kind wasm
+python scripts/wasm64.py prepare
+python scripts/wasm64.py build
+python scripts/wasm64.py check
+python scripts/version.py check
 ```
 
 Rust uses edition 2024 and a pinned toolchain. Formatting, Clippy and documentation
@@ -144,8 +192,18 @@ extracting reference conditioning; the Candle synthesis models remain native Rus
 | Release | Build and test artifacts; dry run by default; opt-in draft or registry publish |
 
 Every workflow uses `workflow_dispatch`. Heavy model jobs and accelerator runners
-are opt-in. Registry publishing requires configured identities and a matching
-existing release tag; creating this repository does not publish any package.
+are opt-in. All distributions share the Cargo workspace version. Use
+`python scripts/version.py set X.Y.Z` to update release metadata together.
+
+To release, merge the verified commit, create its matching `vX.Y.Z` tag, then run
+**Manual release** on that tag with `destination=registries`. The workflow builds
+and tests Windows x64, Linux x64 and macOS ARM wheels and Node addons, validates
+the distribution inventory and checksums, publishes through the configured
+`CARGO_REGISTRY_TOKEN`, `PYPI_API_TOKEN` and `NPM_TOKEN` secrets, and creates the
+GitHub release only after all registry jobs succeed. `destination=artifacts`
+performs the same package checks without publishing; `github-draft` creates a
+reviewable GitHub draft. See [maintenance requirements](AGENTS.md) before changing
+the release process.
 
 ## Attribution
 

@@ -6,14 +6,11 @@ These methods return promises; model inference does not block the JavaScript
 event loop. Calls on one engine are serialized to protect its inference state.
 
 ```sh
-cd bindings/node
-npm ci
-npm run build -- --release
-npm test
+npm install @spensercai/tts-rs
 ```
 
 ```js
-const { loadEngine } = require('@spensercai/tts-rs')
+import { loadEngine } from '@spensercai/tts-rs'
 
 const engine = await loadEngine('/models/Qwen3-TTS-12Hz-0.6B-Base', 'qwen3', 'cpu')
 // referencePcm is mono Float32Array; provide its actual sample rate.
@@ -63,3 +60,12 @@ Its import smoke test does not verify model inference. Candle CUDA/Metal affects
 the synthesis backend; the ONNX frontend currently runs on CPU.
 
 Prompt JSON is limited to 16 MiB and options JSON to 64 KiB before decoding.
+
+## Build from source
+
+```sh
+cd bindings/node
+npm ci
+npm run build -- --release
+npm test
+```

@@ -436,11 +436,11 @@ impl Decoder12Hz {
 
         // Rest quantizers (acoustic) - 15 codebooks, sum embeddings then project
         let mut rest_embed = Tensor::zeros((batch_size, seq_len, 256), DType::F32, device)?;
-        for i in 0..15 {
+        for (i, codebook) in self.rest_codebooks.iter().enumerate().take(15) {
             let layer_codes = codes.i((.., i + 1, ..))?;
             let layer_codes_flat = layer_codes.flatten_all()?;
 
-            let embed = self.rest_codebooks[i].index_select(&layer_codes_flat, 0)?;
+            let embed = codebook.index_select(&layer_codes_flat, 0)?;
             let embed = embed.reshape((batch_size, seq_len, 256))?;
             rest_embed = (rest_embed + embed)?;
         }

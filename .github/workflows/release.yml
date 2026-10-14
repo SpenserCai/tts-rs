@@ -39,6 +39,13 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Check required registry credentials without exposing their values
+        if: inputs.destination == 'registries'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: python scripts/release.py check-secrets
       - run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -152,8 +159,39 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  wasm64:
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: rustup toolchain install nightly-2026-10-13 --profile minimal --component rust-src,clippy,rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-wasm64-nightly-2026-10-13
+      - name: Install the verified Memory64 binding tool
+        run: python scripts/wasm64.py prepare
+      - name: Build the verified Memory64 package
+        run: python scripts/wasm64.py build
+      - run: python scripts/wasm64.py check
+      - run: python scripts/wasm64.py package
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-wasm64
+          path: bindings/wasm/pkg-memory64/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
   assemble:
-    needs: [native, wasm]
+    needs: [native, wasm, wasm64]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -189,8 +227,13 @@ jobs:
         with:
           name: release-wasm
           path: release-assets/npm
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-wasm64
+          path: release-assets/npm
       - run: python scripts/release.py runtime-manifest --output release-assets/runtime-requirements.json
       - run: python scripts/release.py checksums release-assets
+      - run: python scripts/release.py verify-distributions release-assets
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-distributions
@@ -220,6 +263,7 @@ jobs:
         with:
           name: release-distributions
           path: release-assets
+      - run: python scripts/release.py verify-distributions release-assets
       - name: Install the packed Node facade and matching platform package
         run: python scripts/release.py test-node release-assets/npm
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -260,55 +304,64 @@ jobs:
       - name: Create a reviewable draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/release.py github --directory release-assets
+        run: python scripts/release.py github --draft --directory release-assets
 
   publish-crates:
     if: inputs.destination == 'registries'
     needs: verify-packages
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: crates-io
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - run: rustup show active-toolchain
-      - uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1
-        id: auth
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-distributions
+          path: release-assets
+      - run: python scripts/release.py verify-distributions release-assets
       - env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
-        run: python scripts/release.py rust --publish
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: python scripts/release.py rust --publish --artifacts release-assets
 
   publish-pypi:
     if: inputs.destination == 'registries'
     needs: verify-packages
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment: pypi
     permissions:
       contents: read
-      id-token: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: release-distributions
           path: release-assets
+      - run: python scripts/release.py verify-distributions release-assets
+      - name: Verify existing PyPI files and stage only missing wheels
+        id: pypi-files
+        run: python scripts/release.py prepare-pypi release-assets/wheels --output pypi-upload
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        if: steps.pypi-files.outputs.has_uploads == 'true'
         with:
-          packages-dir: release-assets/wheels
+          packages-dir: pypi-upload
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          attestations: false
 
   publish-npm:
     if: inputs.destination == 'registries'
     needs: verify-packages
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    environment: npm
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -321,4 +374,28 @@ jobs:
         with:
           name: release-distributions
           path: release-assets
-      - run: python scripts/release.py publish-npm release-assets/npm
+      - run: python scripts/release.py verify-distributions release-assets
+      - name: Publish the verified npm distributions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: python scripts/release.py publish-npm release-assets/npm
+
+  github-release:
+    if: inputs.destination == 'registries'
+    needs: [publish-crates, publish-pypi, publish-npm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-distributions
+          path: release-assets
+      - name: Publish release assets after every registry succeeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/release.py github --directory release-assets

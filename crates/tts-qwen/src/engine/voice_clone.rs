@@ -47,7 +47,7 @@ impl Qwen3TTS {
         if timed {
             sync_device(&self.device)?;
         }
-        let prefill_started = Instant::now();
+        let prefill_started = timed.then(Instant::now);
         let mut sampling_ctx = generation::SamplingContext::new(options.seed);
         anyhow::ensure!(!text.trim().is_empty(), "target text must not be empty");
         let input_ids = self.text_tokenizer.encode(text)?;
@@ -107,8 +107,9 @@ impl Qwen3TTS {
         if timed {
             sync_device(&self.device)?;
         }
-        let prefill_ms = prefill_started.elapsed().as_secs_f64() * 1000.0;
-        let generation_started = Instant::now();
+        let prefill_ms =
+            prefill_started.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0);
+        let generation_started = timed.then(Instant::now);
         let all_codes = self.generate_codes(
             &gen_config,
             &mut sampling_ctx,
@@ -124,8 +125,9 @@ impl Qwen3TTS {
         if timed {
             sync_device(&self.device)?;
         }
-        let generation_ms = generation_started.elapsed().as_secs_f64() * 1000.0;
-        let decode_started = Instant::now();
+        let generation_ms =
+            generation_started.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0);
+        let decode_started = timed.then(Instant::now);
         // Prepend ref_codes for ICL decoder context (same fix as synthesize_voice_clone)
 
         let audio = if let Some(ref_codes) = &prompt.ref_codes {
@@ -158,7 +160,7 @@ impl Qwen3TTS {
             prefill_ms,
             generation_ms,
             generation_frames: all_codes.len(),
-            decode_ms: decode_started.elapsed().as_secs_f64() * 1000.0,
+            decode_ms: decode_started.map_or(0.0, |start| start.elapsed().as_secs_f64() * 1000.0),
         };
         Ok((audio, all_codes, timing))
     }

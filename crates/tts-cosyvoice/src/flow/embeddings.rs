@@ -311,9 +311,11 @@ impl RotaryEmbedding {
         let half_dim = self.dim / 2;
 
         // Calculate inverse frequencies: 1 / (theta^(2i/dim))
-        // This matches: inv_freq = 1. / (base ** (arange(0, dim, 2).float() / dim))
+        // Keep the power and reciprocal in float32 as upstream does. Rounding
+        // a float64 reciprocal once differs by one ULP for several frequencies.
+        // inv_freq = 1. / (base ** (arange(0, dim, 2).float() / dim))
         let inv_freq: Vec<f32> = (0..half_dim)
-            .map(|i| (1.0 / self.theta.powf(2.0 * i as f64 / self.dim as f64)) as f32)
+            .map(|i| 1.0f32 / (self.theta as f32).powf(2.0 * i as f32 / self.dim as f32))
             .collect();
         let inv_freq = Tensor::from_vec(inv_freq, half_dim, device)?;
 
@@ -498,6 +500,17 @@ mod tests {
 
         // Should be [1, seq_len, dim] to match x_transformers
         assert_eq!(rope.dims(), &[1, 10, 64]);
+        // Pinned Torch 2.3.1 float32 frequencies at position one. These include
+        // values where evaluating pow/reciprocal in float64 gives other bits.
+        let position_one = &rope.to_vec3::<f32>()?[0][1];
+        for (index, expected) in [
+            (5, 0.237_137_36f32),
+            (12, 0.031_622_78),
+            (29, 0.000_237_137_38),
+        ] {
+            assert_eq!(position_one[index * 2], expected);
+            assert_eq!(position_one[index * 2 + 1], expected);
+        }
         Ok(())
     }
 

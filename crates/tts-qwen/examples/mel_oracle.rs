@@ -15,7 +15,7 @@ fn main() -> Result<()> {
         audio.sample_rate == 24_000,
         "oracle requires identical 24000 Hz PCM; resample before comparing"
     );
-    let frontend = MelSpectrogram::new(MelSpectrogram::speaker_encoder());
+    let frontend = MelSpectrogram::new(MelSpectrogram::speaker_encoder())?;
     let mel = frontend
         .compute_for_speaker_encoder(&audio.samples, &Device::Cpu)?
         .unsqueeze(0)?;

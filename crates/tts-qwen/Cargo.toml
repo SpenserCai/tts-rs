@@ -1,6 +1,6 @@
 [package]
 name = "tts-qwen"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 description = "Local Candle inference for Qwen3-TTS"
@@ -34,3 +34,6 @@ half = "2.7"
 [dev-dependencies]
 approx = "0.5"
 tempfile = "3.15"
+
+[lints]
+workspace = true

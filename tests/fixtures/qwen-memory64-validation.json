@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-14",
+  "scope": "Complete Qwen 0.6B Base memory64 speaker-only pipeline; bounded numerical probe with analytic non-speech conditioning, not perceptual quality or natural EOS",
+  "source_revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+  "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+  "device": "cpu",
+  "dtype": "float32",
+  "host": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "node": "24.19.0",
+    "rust_toolchain": "nightly-2026-10-13",
+    "wasm_bindgen": "0.2.129",
+    "candle": "0.9.2"
+  },
+  "module": "published web ESM with explicit Wasm bytes; same loadQwenModel Blob API as browser Worker",
+  "offline_execution": "Linux seccomp denies socket/network syscalls before model process exec",
+  "input": {
+    "audio_sha256": "542c457d3486a0cd1cd6b41176d5a071fa58b610d4e55acbf3b9919c98731134",
+    "sample_rate": 24000,
+    "samples": 24000,
+    "text": "Hello.",
+    "text_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7",
+    "conditioning": "x_vector_only",
+    "decoding": "greedy main and subtalker",
+    "max_tokens": 20,
+    "natural_eos_asserted": false
+  },
+  "checkpoint": {
+    "fingerprint": "bee802730600109d37fcce7ff11045f98e6ac6c657e0f74453e1d027566ade96",
+    "model_weights_sha256": "180b3b10eb1c9f1b4db7806d5475bae3071c0243c299d49926bab1da3b6946f6",
+    "codec_weights_sha256": "836b7b357f5ea43e889936a3709af68dfe3751881acefe4ecf0dbd30ba571258"
+  },
+  "candidate_wasm_sha256": "05b609fab841c14f521bb0659d010c8a97a5701bf0974df2088f38766a2b3dc6",
+  "measured": {
+    "load_seconds": 27.032637312000002,
+    "extraction_seconds": 0.19400929199999883,
+    "synthesis_seconds": 30.901263167999996,
+    "max_rss_kib": 6248228
+  },
+  "output": {
+    "sample_rate": 24000,
+    "samples": 36480,
+    "all_finite": true
+  },
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "comparisons": {
+    "official_python": {
+      "passed": true,
+      "waveform": {
+        "passed": true,
+        "elements": 36480,
+        "max_absolute_error": 5.270521796774119e-09,
+        "mean_absolute_error": 9.780099443751648e-10,
+        "root_mean_square_error": 1.2242309705938718e-09,
+        "max_relative_error": 0.0004735014455480283,
+        "cosine_similarity": 0.9999999939640107,
+        "failing_elements": 0,
+        "first_failing_indices": [],
+        "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)",
+        "reference_rms": 1.1135000153200053e-05,
+        "reference_peak": 1.6385631170123816e-05,
+        "identical_waveform": false,
+        "snr_db": 79.17653730523504
+      }
+    },
+    "native_rust": {
+      "passed": true,
+      "waveform": {
+        "passed": true,
+        "elements": 36480,
+        "max_absolute_error": 5.180481821298599e-09,
+        "mean_absolute_error": 1.0003988468030768e-09,
+        "root_mean_square_error": 1.2517606470437574e-09,
+        "max_relative_error": 0.00046318138934575465,
+        "cosine_similarity": 0.9999999936883202,
+        "failing_elements": 0,
+        "first_failing_indices": [],
+        "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)",
+        "reference_rms": 1.1135002502387242e-05,
+        "reference_peak": 1.6385200069635175e-05,
+        "identical_waveform": false,
+        "snr_db": 78.98338049848483
+      }
+    }
+  },
+  "limitations": [
+    "No browser engine executed",
+    "No memory64 ICL run",
+    "Single bounded analytic numerical case, not speech quality",
+    "CUDA, Metal, WebGPU and CosyVoice are not exposed by this package"
+  ]
+}

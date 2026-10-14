@@ -62,6 +62,20 @@ benchmark or call an empty benchmark run successful.
 
 ## CI and releases
 
+`[workspace.package].version` in the root Cargo manifest is the single source of
+the release version. Every Rust crate and binding uses `version.workspace = true`;
+Python obtains its dynamic version from Cargo. Node's manifest and root lockfile
+entries are synchronized copies. Both Wasm targets and native platform npm
+packages inherit that same version at packaging time. Publish one stable
+`MAJOR.MINOR.PATCH` version across crates.io, PyPI, npm and the GitHub `vVERSION`
+tag; never independently bump a binding or silently reuse a published version.
+
+Use `python scripts/version.py set X.Y.Z` for a release update and commit its
+manifest and lockfile changes together. Run `python scripts/version.py check`
+locally and in CI. The version command does not tag, merge, dispatch or publish.
+The initial release remains 0.1.0 until released; subsequent changes follow
+Semantic Versioning, with breaking changes before 1.0 incrementing the minor.
+
 All GitHub workflows remain `workflow_dispatch` only. Keep a cheap Linux gate,
 an explicit full platform matrix, and separate expensive model evaluation.
 Pin external actions to verified commit SHAs. Use minimal permissions, cache
@@ -70,8 +84,20 @@ Never add push/PR/schedule triggers without a maintainer request.
 
 Release defaults to a dry run. Real registry publication requires the existing
 matching tag, complete checks and configured registry identities. Build once,
-test the built packages, then reuse those exact artifacts. Do not create release
-tags, merge branches, publish packages or configure secrets as a side effect of
+test the built Python/npm packages, then reuse those exact artifacts. Cargo
+performs its standard package verification again when publishing the same tagged
+sources, after checking that repackaged archives match the verified artifacts.
+Registry jobs use repository secrets `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`
+and `PYPI_API_TOKEN`. Preflight may check presence only; do not print or export
+credential values. Only the corresponding publisher uses each credential.
+After all registry uploads succeed, publish the GitHub release with checksums and
+the tested distributions. Partial registry failures remain failed releases.
+Retry failed publisher jobs from the same workflow run so they reuse the original
+artifacts: publishers skip
+only archives whose registry digest exactly matches and reject conflicting or
+yanked files. Do not rebuild an already uploaded version and blindly skip it;
+new build metadata can change wheel/npm hashes even for the same source commit.
+Do not create release tags, merge branches, publish packages or configure secrets as a side effect of
 routine development. A requested development task may be delivered in a branch
 or draft PR without publication.
 

@@ -1,6 +1,6 @@
 [package]
 name = "tts-cosyvoice"
-version = "0.1.0"
+version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 description = "Candle inference components for CosyVoice 3 speech synthesis"
@@ -26,3 +26,6 @@ rand = "0.9"
 
 [dev-dependencies]
 tempfile = "3.15"
+
+[lints]
+workspace = true

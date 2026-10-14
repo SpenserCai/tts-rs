@@ -1,10 +1,16 @@
-//! Portable WebAssembly components, without a claim of full-model inference.
+//! Portable WebAssembly audio and memory64 Qwen speech inference.
 
 use tts_core::{Audio, SynthesisOptions, VoicePrompt};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "qwen")]
 mod qwen;
+
+#[cfg(feature = "qwen-synthesis")]
+mod synthesis;
+
+#[cfg(all(target_arch = "wasm64", feature = "qwen"))]
+mod entropy;
 
 const MAX_PROMPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OPTIONS_BYTES: usize = 64 * 1024;
@@ -91,7 +97,9 @@ pub fn capabilities() -> String {
         "prompt_envelope_validation": true,
         "synthesis_options_validation": true,
         "voice_extraction": cfg!(feature = "qwen"),
-        "speech_synthesis": false,
+        "speech_synthesis": cfg!(all(feature = "qwen-synthesis", target_pointer_width = "64")),
+        "address_bits": usize::BITS,
+        "models": if cfg!(all(feature = "qwen-synthesis", target_pointer_width = "64")) { vec!["qwen3"] } else { vec![] },
         "accelerators": [],
     })
     .to_string()

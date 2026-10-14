@@ -47,6 +47,27 @@ fn device(config: DeviceConfig) -> Result<Device> {
 }
 
 impl Engine {
+    /// Wrap an in-memory Qwen checkpoint using its verified content fingerprint.
+    ///
+    /// Callers loading explicit bytes use [`crate::CheckpointHasher`] over the
+    /// original checkpoint files, in its advertised order. This preserves prompt
+    /// identity across filesystem and WebAssembly loaders.
+    #[cfg(feature = "qwen")]
+    pub fn from_qwen(model: tts_qwen::Qwen3TTS, fingerprint: String) -> Result<Self> {
+        if fingerprint.len() != 64 || !fingerprint.bytes().all(|c| c.is_ascii_hexdigit()) {
+            return Err(Error::InvalidInput(
+                "checkpoint fingerprint must be a SHA-256 hex digest".into(),
+            ));
+        }
+        let device = model.device().clone();
+        Ok(Self {
+            backend: Backend::Qwen(Box::new(model)),
+            kind: ModelKind::Qwen3,
+            fingerprint: fingerprint.to_ascii_lowercase(),
+            device,
+        })
+    }
+
     /// Load a local checkpoint, selecting hardware explicitly.
     pub fn load(model_dir: &str, kind: ModelKind, config: DeviceConfig) -> Result<Self> {
         let directory = Path::new(model_dir);

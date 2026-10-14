@@ -20,6 +20,7 @@ def main() -> None:
     parser.add_argument("--prompt-tokens", type=int, default=8)
     parser.add_argument("--tokens", type=int, default=8)
     parser.add_argument("--attention-backend", choices=["default", "math"], default="default")
+    parser.add_argument("--layerwise", action="store_true", help="Export first-step DiT layer outputs for numerical diagnosis")
     args = parser.parse_args()
     source = args.source.resolve()
     matcha = source / "third_party" / "Matcha-TTS"
@@ -70,7 +71,12 @@ def main() -> None:
         if name not in intermediate:
             intermediate[name] = result.detach().cpu()
 
-    for name in ["pre_lookahead_layer", "spk_embed_affine_layer", "decoder.estimator"]:
+    trace_modules = ["pre_lookahead_layer", "spk_embed_affine_layer", "decoder.estimator"]
+    if args.layerwise:
+        trace_modules.extend(["decoder.estimator.time_embed", "decoder.estimator.input_embed",
+                              "decoder.estimator.norm_out"])
+        trace_modules.extend(f"decoder.estimator.transformer_blocks.{i}" for i in range(22))
+    for name in trace_modules:
         handles.append(model.get_submodule(name).register_forward_hook(
             lambda _module, _inputs, result, key=name: capture(key, result)
         ))
@@ -96,7 +102,7 @@ def main() -> None:
         "weights_sha256": weights_sha256, "input_features_sha256": sha256(args.prompt_features),
         "flow_noise_sha256": sha256(args.output / "flow-noise.safetensors"),
         "timesteps": 10, "streaming": False, "finalize": True,
-        "attention_backend": args.attention_backend,
+        "attention_backend": args.attention_backend, "layerwise_trace": args.layerwise,
         "scope": "official token-conditioned flow; excludes LLM and HiFT",
         "randomness": "exact official decoder.rand_noise tensor exported for Candle replay",
     }

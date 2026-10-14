@@ -105,6 +105,24 @@ impl TextTokenizer {
     /// - Post-processor: ByteLevel(trim_offsets=false)
     /// - Decoder: ByteLevel
     pub fn from_vocab_and_merges(dir: &Path) -> Result<Self> {
+        let config = dir.join("tokenizer_config.json");
+        Self::from_vocab_and_merges_data(
+            &std::fs::read_to_string(dir.join("vocab.json"))?,
+            &std::fs::read_to_string(dir.join("merges.txt"))?,
+            config
+                .exists()
+                .then(|| std::fs::read_to_string(config))
+                .transpose()?
+                .as_deref(),
+        )
+    }
+
+    /// Build the same Qwen2 tokenizer from explicit UTF-8 checkpoint contents.
+    pub fn from_vocab_and_merges_data(
+        vocab: &str,
+        merges: &str,
+        config: Option<&str>,
+    ) -> Result<Self> {
         use tokenizers::SplitDelimiterBehavior;
         use tokenizers::models::bpe::BPE;
         use tokenizers::normalizers::unicode::NFC;
@@ -112,18 +130,22 @@ impl TextTokenizer {
         use tokenizers::pre_tokenizers::sequence::Sequence;
         use tokenizers::pre_tokenizers::split::{Split, SplitPattern};
 
-        let vocab_path = dir.join("vocab.json");
-        let merges_path = dir.join("merges.txt");
-
-        // Build BPE model from files
-        let bpe = BPE::from_file(
-            &vocab_path.to_string_lossy(),
-            &merges_path.to_string_lossy(),
-        )
-        .unk_token("<|endoftext|>".to_string())
-        .byte_fallback(false)
-        .build()
-        .map_err(|e| anyhow!("Failed to build BPE from vocab.json + merges.txt: {}", e))?;
+        let vocab: tokenizers::models::bpe::Vocab = serde_json::from_str(vocab)?;
+        let merges = merges
+            .lines()
+            .filter(|line| !line.starts_with("#version"))
+            .map(|line| {
+                let parts: Vec<_> = line.split(' ').collect();
+                anyhow::ensure!(parts.len() == 2, "invalid BPE merge row");
+                Ok((parts[0].to_owned(), parts[1].to_owned()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let bpe = BPE::builder()
+            .vocab_and_merges(vocab, merges)
+            .unk_token("<|endoftext|>".to_string())
+            .byte_fallback(false)
+            .build()
+            .map_err(|e| anyhow!("Failed to build BPE from vocab.json + merges.txt: {}", e))?;
 
         let mut tokenizer = Tokenizer::new(bpe);
 
@@ -147,9 +169,8 @@ impl TextTokenizer {
         tokenizer.with_decoder(Some(ByteLevel::new(false, false, false)));
 
         // Add special tokens from tokenizer_config.json if present
-        let config_path = dir.join("tokenizer_config.json");
-        if config_path.exists() {
-            add_special_tokens_from_config(&mut tokenizer, &config_path)?;
+        if let Some(config) = config {
+            add_special_tokens_from_config(&mut tokenizer, config)?;
         }
 
         Self::from_tokenizer(tokenizer)
@@ -280,12 +301,10 @@ impl TextTokenizer {
 /// Looks for `added_tokens_decoder` (a map of ID → token info) which is the
 /// standard HuggingFace format for special tokens like `<|im_start|>`,
 /// `<|im_end|>`, `<|endoftext|>`, `<tts_pad>`, `<tts_text_bos>`, etc.
-fn add_special_tokens_from_config(tokenizer: &mut Tokenizer, config_path: &Path) -> Result<()> {
+fn add_special_tokens_from_config(tokenizer: &mut Tokenizer, content: &str) -> Result<()> {
     use tokenizers::AddedToken;
 
-    let content = std::fs::read_to_string(config_path)
-        .map_err(|e| anyhow!("Failed to read tokenizer_config.json: {}", e))?;
-    let config: serde_json::Value = serde_json::from_str(&content)
+    let config: serde_json::Value = serde_json::from_str(content)
         .map_err(|e| anyhow!("Failed to parse tokenizer_config.json: {}", e))?;
 
     // Extract added_tokens_decoder: { "151643": { "content": "<|endoftext|>", "special": true, ... }, ... }
@@ -497,5 +516,24 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("No tokenizer files found"));
+    }
+}
+
+#[cfg(test)]
+mod memory_loader_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_bytes_match_file_tokenizer() {
+        let vocab = r#"{"a":0,"b":1,"ab":2,"<|endoftext|>":3}"#;
+        let merges = "#version: 0.2\na b\n";
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join("vocab.json"), vocab).unwrap();
+        std::fs::write(root.path().join("merges.txt"), merges).unwrap();
+        let files = TextTokenizer::from_vocab_and_merges(root.path()).unwrap();
+        let bytes = TextTokenizer::from_vocab_and_merges_data(vocab, merges, None).unwrap();
+        assert_eq!(files.encode("ab").unwrap(), vec![2]);
+        assert_eq!(files.encode("abab").unwrap(), bytes.encode("abab").unwrap());
+        assert!(TextTokenizer::from_vocab_and_merges_data(vocab, "a b c", None).is_err());
     }
 }

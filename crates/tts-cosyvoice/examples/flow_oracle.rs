@@ -6,6 +6,8 @@ use serde_json::json;
 use std::{collections::HashMap, error::Error, path::Path};
 use tts_cosyvoice::{
     config::FlowConfig,
+    flow::dit::DiTBlock,
+    flow::embeddings::{AdaLayerNormZeroFinal, InputEmbedding, RotaryEmbedding, TimestepEmbedding},
     flow::{DiT, flow_matching::CausalMaskedDiffWithDiT, pre_lookahead::PreLookaheadLayer},
 };
 
@@ -56,9 +58,12 @@ impl Fixture {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
-    if args.len() != 4 {
-        return Err("usage: flow_oracle MODEL_DIR INPUT_JSON FLOW_NOISE OUTPUT_JSON".into());
+    if !(4..=5).contains(&args.len()) || args.get(4).is_some_and(|flag| flag != "--layerwise") {
+        return Err(
+            "usage: flow_oracle MODEL_DIR INPUT_JSON FLOW_NOISE OUTPUT_JSON [--layerwise]".into(),
+        );
     }
+    let layerwise = args.len() == 5;
     let fixture: Fixture = serde_json::from_slice(&std::fs::read(&args[1])?)?;
     if fixture.schema_version != 1 {
         return Err("expected version 1 fixture".into());
@@ -67,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let config = FlowConfig::default();
     let weights = std::fs::read(Path::new(&args[0]).join("flow.safetensors"))?;
     let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, &device)?;
-    let dit = DiT::new(config.dit, vb.pp("dit"))?;
+    let dit = DiT::new(config.dit.clone(), vb.pp("dit"))?;
     let mut noise = candle::safetensors::load(&args[2], &device)?;
     let noise = noise.remove("noise").ok_or("missing noise")?;
     let prompt_tokens = fixture.tensor("prompt_tokens", &device)?;
@@ -108,6 +113,55 @@ fn main() -> Result<(), Box<dyn Error>> {
         false,
     )?;
     let mut intermediate = serde_json::Map::new();
+    if layerwise {
+        // Replay the first estimator step with the public component modules. This
+        // isolates accumulated errors by layer without production tracing hooks.
+        let dit_vb = vb.pp("dit");
+        let time = TimestepEmbedding::new(config.dit.dim, dit_vb.pp("time_embed"))?
+            .forward(&Tensor::zeros(2, DType::F32, &device)?)?;
+        let mut hidden = InputEmbedding::new(80, 80, config.dit.dim, dit_vb.pp("input_embed"))?
+            .forward(
+                &noise
+                    .narrow(2, 0, frames)?
+                    .repeat((2, 1, 1))?
+                    .transpose(1, 2)?,
+                &Tensor::cat(&[&condition, &zeros_mu], 0)?.transpose(1, 2)?,
+                &Tensor::cat(&[&mu, &zeros_mu], 0)?.transpose(1, 2)?,
+                &Tensor::cat(&[&speaker, &speaker.zeros_like()?], 0)?,
+            )?;
+        let rope = RotaryEmbedding::new(config.dit.dim_head, 10000.0).forward(
+            frames,
+            &device,
+            DType::F32,
+        )?;
+        let mut trace = vec![
+            ("decoder.estimator.time_embed".to_string(), time.clone()),
+            ("decoder.estimator.input_embed".to_string(), hidden.clone()),
+        ];
+        for index in 0..config.dit.depth {
+            hidden = DiTBlock::new(
+                &config.dit,
+                dit_vb.pp(format!("transformer_blocks.{index}")),
+            )?
+            .forward(&hidden, &time, None, &rope)?;
+            trace.push((
+                format!("decoder.estimator.transformer_blocks.{index}"),
+                hidden.clone(),
+            ));
+        }
+        let normalized = AdaLayerNormZeroFinal::new(config.dit.dim, dit_vb.pp("norm_out"))?
+            .forward(&hidden, &time)?;
+        let replay = candle_nn::linear(config.dit.dim, 80, dit_vb.pp("proj_out"))?
+            .forward(&normalized)?
+            .transpose(1, 2)?;
+        if replay.flatten_all()?.to_vec1::<f32>()? != first.flatten_all()?.to_vec1::<f32>()? {
+            return Err("diagnostic replay differs from production estimator".into());
+        }
+        trace.push(("decoder.estimator.norm_out".to_string(), normalized));
+        for (key, tensor) in trace {
+            intermediate.insert(key, json!({"shape": tensor.dims(), "dtype": "float32", "data": tensor.flatten_all()?.to_vec1::<f32>()?}));
+        }
+    }
     for (key, tensor) in [
         ("pre_lookahead_layer", pre),
         ("spk_embed_affine_layer", speaker),

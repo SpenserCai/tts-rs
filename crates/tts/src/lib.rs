@@ -11,6 +11,8 @@ mod qwen_prompt;
 
 #[cfg(any(feature = "qwen", feature = "cosyvoice"))]
 pub use engine::Engine;
+#[cfg(any(feature = "qwen", feature = "cosyvoice"))]
+pub use fingerprint::CheckpointHasher;
 
 #[cfg(feature = "cosyvoice")]
 pub use tts_cosyvoice as cosyvoice;
