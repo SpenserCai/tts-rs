@@ -85,6 +85,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-native
+      - name: Verify the external CPU frontend runtime for this platform
+        run: python scripts/install_onnxruntime.py --output .cache/onnxruntime --github-env
       - name: Build the Python wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
@@ -137,7 +139,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-wasm
-      - run: cargo install wasm-pack --version 0.15.0 --locked
+      - run: python scripts/install_wasm_pack.py --github-path
       - run: python scripts/ci.py bindings --kind wasm
       - name: Package the web-target module
         working-directory: bindings/wasm/pkg-web
@@ -223,6 +225,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Check the abi3 wheel on the minimum supported CPython
+        shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path

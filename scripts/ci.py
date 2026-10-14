@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 
+from package_licenses import stage, verify
+
 ROOT = Path(__file__).resolve().parents[1]
 BINDINGS = ("tts-python", "tts-node", "tts-wasm")
 
@@ -35,6 +37,7 @@ def strict_environment() -> dict[str, str]:
 
 def rust_checks(device: str) -> None:
     env = strict_environment()
+    verify()
     run("cargo", "fmt", "--all", "--check", env=env)
     for feature in (None, "qwen", "cosyvoice"):
         features = ("--features", feature) if feature is not None else ()
@@ -79,14 +82,17 @@ def wasm_binding() -> None:
         "--locked", "--", "-D", "warnings", env=env)
     run("cargo", "clippy", "-p", "tts-wasm", "--target", "wasm32-unknown-unknown",
         "--features", "qwen", "--locked", "--", "-D", "warnings", env=env)
-    run("wasm-pack", "build", "--target", "nodejs", "--out-dir", "pkg", "--locked", cwd=cwd)
+    # Keep LLVM's release optimizations, without wasm-pack downloading a separate Binaryen tool.
+    run("wasm-pack", "build", "--target", "nodejs", "--out-dir", "pkg", "--no-opt", "--locked", cwd=cwd)
     run("node", "--test", "tests/smoke.cjs", cwd=cwd)
     run("wasm-pack", "build", "--target", "nodejs", "--out-dir", "pkg",
-        "--features", "qwen", "--locked", cwd=cwd)
+        "--no-opt", "--features", "qwen", "--locked", cwd=cwd)
     run("node", "-e", "require('node:assert/strict').equal(typeof require('./pkg/tts_wasm.js').QwenSpeakerEncoder, 'function')", cwd=cwd)
     run("node", "--test", "tests/smoke.cjs", cwd=cwd)
     run("wasm-pack", "build", "--target", "web", "--out-dir", "pkg-web",
-        "--scope", "spensercai", "--features", "qwen", "--locked", cwd=cwd)
+        "--scope", "spensercai", "--no-opt", "--features", "qwen", "--locked", cwd=cwd)
+    stage("wasm", cwd / "pkg", npm=True)
+    stage("wasm", cwd / "pkg-web", npm=True)
 
 
 def main() -> None:

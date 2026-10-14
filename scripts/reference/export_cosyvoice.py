@@ -32,6 +32,7 @@ def export(source: Path, output: Path, device: str = "cpu") -> None:
         "time": module.TimestepEmbedding(dim),
         "ada": module.AdaLayerNormZero(dim),
         "final": module.AdaLayerNormZero_Final(dim),
+        "feedforward": module.FeedForward(dim, mult=2, approximate="tanh"),
     }
     weights = {}
     for module_index, (prefix, model) in enumerate(modules.items()):
@@ -49,6 +50,7 @@ def export(source: Path, output: Path, device: str = "cpu") -> None:
         time_result = modules["time"](time.to(torch_device))
         ada = modules["ada"](x.to(torch_device), emb.to(torch_device))
         final = modules["final"](x.to(torch_device), emb.to(torch_device))
+        feedforward = modules["feedforward"](x.to(torch_device))
     output.mkdir(parents=True, exist_ok=True)
     save_file(weights, str(output / "conditioning.safetensors"))
     metadata = {
@@ -56,11 +58,11 @@ def export(source: Path, output: Path, device: str = "cpu") -> None:
         "source_revision": PINS["cosyvoice"]["revision"], "source_file_sha256": sha256(module_path),
         "weights_sha256": sha256(output / "conditioning.safetensors"),
         "torch": torch.__version__, "dtype": "float32", "device": device, "threads": 1,
-        "scope": "TimestepEmbedding, AdaLayerNormZero and AdaLayerNormZero_Final; excludes full DiT/flow/vocoder",
+        "scope": "TimestepEmbedding, adaptive normalization and tanh-GELU FeedForward; excludes full DiT/flow/vocoder",
     }
     write_json(output / "config.json", {"dim": dim})
     write_json(output / "input.json", tensor_document({"time": time, "x": x, "emb": emb}, metadata))
-    results = {"time": time_result, "final": final}
+    results = {"time": time_result, "final": final, "feedforward": feedforward}
     results.update(dict(zip(["ada.x", "ada.gate_msa", "ada.shift_mlp", "ada.scale_mlp", "ada.gate_mlp"], ada)))
     write_json(output / "reference.json", tensor_document(results, metadata))
     write_json(output / "manifest.json", metadata)

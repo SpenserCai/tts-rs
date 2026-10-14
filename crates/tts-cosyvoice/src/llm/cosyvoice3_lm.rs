@@ -300,6 +300,25 @@ impl Mlp {
 
 impl CosyVoice3LM {
     pub fn new(config: &CosyVoice3LMConfig, vb: VarBuilder) -> Result<Self> {
+        let qwen = &config.qwen2;
+        if qwen.num_attention_heads == 0
+            || qwen.num_key_value_heads == 0
+            || !config
+                .llm_input_size
+                .is_multiple_of(qwen.num_attention_heads)
+            || !qwen
+                .num_attention_heads
+                .is_multiple_of(qwen.num_key_value_heads)
+            || config.llm_input_size == 0
+            || config.llm_output_size != config.llm_input_size
+            || qwen.hidden_size != config.llm_input_size
+            || !(config.llm_input_size / qwen.num_attention_heads).is_multiple_of(2)
+            || qwen.max_position_embeddings == 0
+            || !qwen.rope_theta.is_finite()
+            || qwen.rope_theta <= 0.0
+        {
+            candle::bail!("invalid CosyVoice Qwen2 dimensions or rotary configuration");
+        }
         let device = vb.device().clone();
         let dtype = vb.dtype();
         let hidden_size = config.llm_input_size;
@@ -401,6 +420,31 @@ impl CosyVoice3LM {
         self.norm.forward(&x)
     }
 
+    fn context_embeddings(&self, text: &Tensor, speech: &Tensor) -> Result<Tensor> {
+        let text_emb = self.text_embedding.forward(text)?;
+        let sos_id = Tensor::from_slice(&[SOS_TOKEN], (1, 1), &self.device)?;
+        let task_id = Tensor::from_slice(&[TASK_ID_TOKEN], (1, 1), &self.device)?;
+        let sos_emb = self.speech_embedding.forward(&sos_id)?;
+        let task_emb = self.speech_embedding.forward(&task_id)?;
+        if speech.dim(1)? == 0 {
+            Tensor::cat(&[&sos_emb, &text_emb, &task_emb], 1)
+        } else {
+            let speech_emb = self.speech_embedding.forward(speech)?;
+            Tensor::cat(&[&sos_emb, &text_emb, &task_emb, &speech_emb], 1)
+        }
+    }
+
+    /// Teacher-forced next-token logits for a complete text and speech context.
+    /// The text includes the instruction/reference prefix; speech may include
+    /// fixed generated tokens appended after the reference. Resets the KV cache.
+    pub fn next_token_logits(&mut self, text: &Tensor, speech: &Tensor) -> Result<Tensor> {
+        let input = self.context_embeddings(text, speech)?;
+        self.clear_kv_cache();
+        let hidden = self.forward_embeds(&input, 0)?;
+        let last = hidden.narrow(1, hidden.dim(1)? - 1, 1)?;
+        self.llm_decoder.forward(&last)?.squeeze(1)
+    }
+
     /// Autoregressive speech token generation
     pub fn inference(
         &mut self,
@@ -422,28 +466,14 @@ impl CosyVoice3LM {
         };
         let text_len = text.dim(1)?;
 
-        // 2. Embedding
-        let text_emb = self.text_embedding.forward(&text)?;
-
-        let sos_id = Tensor::from_slice(&[SOS_TOKEN], (1, 1), &self.device)?;
-        let task_id = Tensor::from_slice(&[TASK_ID_TOKEN], (1, 1), &self.device)?;
-
-        let sos_emb = self.speech_embedding.forward(&sos_id)?;
-        let task_id_emb = self.speech_embedding.forward(&task_id)?;
-
-        // 3. Build input sequence
-        // Handle empty prompt_speech_tokens (for cross-lingual/instruct modes)
-        let lm_input = if prompt_speech_tokens.dim(1)? == 0 {
-            // No prompt speech tokens - just use sos + text + task_id
-            Tensor::cat(&[&sos_emb, &text_emb, &task_id_emb], 1)?
-        } else {
-            let prompt_speech_emb = self.speech_embedding.forward(prompt_speech_tokens)?;
-            Tensor::cat(&[&sos_emb, &text_emb, &task_id_emb, &prompt_speech_emb], 1)?
-        };
+        let lm_input = self.context_embeddings(&text, prompt_speech_tokens)?;
 
         // 4. Calculate min/max length (matching Python implementation)
         let min_len = (text_len - prompt_text_len) * 2;
         let max_len = ((text_len - prompt_text_len) * 20).min(sampling_config.max_tokens);
+        if lm_input.dim(1)?.saturating_add(max_len) > self.rotary_emb.cos.dim(0)? {
+            candle::bail!("text/reference and output token budget exceed the context window");
+        }
         let mut out_tokens = Vec::new();
 
         self.clear_kv_cache();
@@ -499,41 +529,31 @@ impl CosyVoice3LM {
         decoded_tokens: &[u32],
         ignore_eos: bool,
     ) -> Result<u32> {
-        let logits = if config.temperature != 1.0 && config.temperature > 0.0 {
+        // The official sampler receives float log probabilities and suppresses
+        // index speech_token_size when ignore_eos is set. Keep its exact special-
+        // token convention; CosyVoice 3 treats any remaining special as a stop.
+        let mut values = logits
+            .to_dtype(DType::F32)?
+            .flatten_all()?
+            .to_vec1::<f32>()?;
+        if ignore_eos {
+            values[self.speech_token_size] = f32::NEG_INFINITY;
+        }
+        let logits = Tensor::from_vec(values, logits.shape(), logits.device())?;
+        let logits = if config.temperature > 0.0 && config.temperature != 1.0 {
             (logits / config.temperature as f64)?
         } else {
-            logits.clone()
+            logits
         };
-
         let logits = if config.repetition_penalty != 1.0 && !decoded_tokens.is_empty() {
             self.apply_repetition_penalty(&logits, decoded_tokens, config.repetition_penalty)?
         } else {
             logits
         };
-
         if config.temperature == 0.0 {
-            let logits = if ignore_eos {
-                logits.narrow(1, 0, self.speech_token_size)?
-            } else {
-                logits
-            };
             return logits.argmax(1)?.squeeze(0)?.to_scalar::<u32>();
         }
-
-        // Retry sampling until we get a valid token (matching Python behavior)
-        let max_trials = 100;
-        for _ in 0..max_trials {
-            // Use RAS (Repetition Aware Sampling) like Python
-            let top_ids = self.ras_sampling(&logits, decoded_tokens, config.top_k, config.top_p)?;
-
-            // If ignore_eos is false, or the token is a valid speech token
-            if !ignore_eos || top_ids < self.speech_token_size as u32 {
-                return Ok(top_ids);
-            }
-            // Otherwise retry
-        }
-
-        candle::bail!("sampling failed to produce a valid speech token after 100 attempts")
+        self.ras_sampling(&logits, decoded_tokens, config.top_k, config.top_p)
     }
 
     /// Repetition Aware Sampling (RAS) from VALL-E 2
@@ -563,7 +583,10 @@ impl CosyVoice3LM {
         // If repetition exceeds threshold, use random sampling
         // Python: if rep_num >= win_size * tau_r (i.e., >= 1.0 when win_size=10, tau_r=0.1)
         if rep_num >= (win_size as f32 * tau_r) as usize {
-            return self.random_sampling(logits);
+            let mut scores = logits.flatten_all()?.to_vec1::<f32>()?;
+            scores[top_ids as usize] = f32::NEG_INFINITY;
+            let scores = Tensor::from_vec(scores, logits.shape(), logits.device())?;
+            return self.random_sampling(&scores);
         }
 
         Ok(top_ids)
@@ -677,5 +700,31 @@ mod tests {
         assert_eq!(EOS_TOKEN, 6562);
         assert_eq!(TASK_ID_TOKEN, 6563);
         assert_eq!(FILL_TOKEN, 6564);
+    }
+
+    #[test]
+    fn ras_excludes_the_repeated_candidate() -> Result<()> {
+        let device = Device::Cpu;
+        let config = CosyVoice3LMConfig {
+            llm_input_size: 8,
+            llm_output_size: 8,
+            speech_token_size: 2,
+            qwen2: crate::config::Qwen2Config {
+                hidden_size: 8,
+                num_hidden_layers: 0,
+                num_attention_heads: 1,
+                num_key_value_heads: 1,
+                intermediate_size: 16,
+                max_position_embeddings: 4,
+                vocab_size: 8,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let model = CosyVoice3LM::new(&config, VarBuilder::zeros(DType::F32, &device))?;
+        // Top-k one deterministically proposes 0; after rejection only 1 remains.
+        let logits = Tensor::from_slice(&[100f32, 0.], (1, 2), &device)?;
+        assert_eq!(model.ras_sampling(&logits, &[0], 1, 0.8)?, 1);
+        Ok(())
     }
 }

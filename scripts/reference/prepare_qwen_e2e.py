@@ -17,17 +17,9 @@ from pathlib import Path
 from common import PINS, ROOT, sha256, write_json
 
 
-def prepare(output: Path, model_dir: Path | None = None) -> Path:
-    from huggingface_hub import snapshot_download
-
-    output = output.resolve()
-    output.mkdir(parents=True, exist_ok=True)
-    if model_dir is None:
-        cache_root = Path(os.environ.get("HF_HOME", str(ROOT / ".reference" / "models")))
-        model_dir = cache_root / "oracle-snapshots" / "qwen3-tts-0.6b-base"
-        snapshot_download(PINS["qwen"]["model_id"], revision=PINS["qwen"]["model_revision"],
-                          local_dir=model_dir, allow_patterns=["*.json", "*.txt", "*.safetensors", "speech_tokenizer/*"])
-    audio = output / "conditioning-tone.wav"
+def write_conditioning_tone(audio: Path) -> None:
+    """Write the shared deterministic PCM16 fixture, without downloads or builds."""
+    audio.parent.mkdir(parents=True, exist_ok=True)
     sample_rate = 24000
     pcm = []
     for index in range(sample_rate):
@@ -40,11 +32,34 @@ def prepare(output: Path, model_dir: Path | None = None) -> Path:
         stream.setsampwidth(2)
         stream.setframerate(sample_rate)
         stream.writeframes(struct.pack(f"<{len(pcm)}h", *pcm))
+
+
+def resolve_model_directory(model_dir: Path | None = None) -> Path:
+    """Reuse caller weights or fetch the pinned checkpoint into the shared cache."""
+    from huggingface_hub import snapshot_download
+
+    if model_dir is None:
+        cache_root = Path(os.environ.get("HF_HOME", str(ROOT / ".reference" / "models")))
+        model_dir = cache_root / "oracle-snapshots" / "qwen3-tts-0.6b-base"
+        snapshot_download(PINS["qwen"]["model_id"], revision=PINS["qwen"]["model_revision"],
+                          local_dir=model_dir, allow_patterns=["*.json", "*.txt", "*.safetensors", "speech_tokenizer/*"])
+    return model_dir.resolve()
+
+
+def prepare(output: Path, model_dir: Path | None = None, reference_audio: Path | None = None) -> Path:
+    output = output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    model_dir = resolve_model_directory(model_dir)
+    audio = reference_audio.resolve() if reference_audio else output / "conditioning-tone.wav"
+    if reference_audio is None:
+        write_conditioning_tone(audio)
     subprocess.run(["cargo", "build", "--locked", "--release", "-p", "tts-qwen", "--example", "synthesis_oracle"],
                    cwd=ROOT, check=True)
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
+    if not target.is_absolute():
+        target = ROOT / target
     binary = target / "release" / "examples" / ("synthesis_oracle.exe" if os.name == "nt" else "synthesis_oracle")
-    text = "Hello."
+    text = "Good morning." if reference_audio else "Hello."
     manifest = {
         "schema_version": 1, "model": "qwen", "device": "cpu", "source_revision": PINS["qwen"]["revision"],
         "model_revision": PINS["qwen"]["model_revision"],
@@ -64,6 +79,15 @@ def prepare(output: Path, model_dir: Path | None = None) -> Path:
             "output": str(output / "rust.json"),
         },
     }
+    if reference_audio:
+        manifest["scope"] = "CPU float32 full ICL synthesis conditioned on the public analytic-tone result; no quality claim"
+        manifest["reference"]["command"] += ["--reference-text", "Hello."]
+        manifest["candidate"]["command"] += ["Hello."]
+        manifest["sidecars"] = [{
+            "name": "reference_codes",
+            "reference": str(output / "python-reference-codes.json"),
+            "candidate": str(output / "rust.reference-codes.json"),
+        }]
     path = output / "e2e-manifest.json"
     write_json(path, manifest)
     return path

@@ -5,8 +5,16 @@
   "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
-  "files": ["index.js", "index.d.ts", "*.node", "README.md"],
-  "engines": { "node": ">=22" },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "README.md",
+    "licenses"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SpenserCai/tts-rs.git",
@@ -26,5 +34,7 @@
     "artifacts": "napi artifacts",
     "create-npm-dirs": "napi create-npm-dirs"
   },
-  "devDependencies": { "@napi-rs/cli": "^3.0.0" }
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  }
 }

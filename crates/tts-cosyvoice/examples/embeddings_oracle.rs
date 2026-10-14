@@ -4,6 +4,7 @@ use candle_nn::VarBuilder;
 use serde::Deserialize;
 use serde_json::json;
 use std::{collections::HashMap, error::Error, path::PathBuf};
+use tts_cosyvoice::flow::dit::FeedForward;
 use tts_cosyvoice::flow::embeddings::{AdaLayerNormZero, AdaLayerNormZeroFinal, TimestepEmbedding};
 
 #[derive(Deserialize)]
@@ -58,6 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let time_result = TimestepEmbedding::new(config.dim, vb.pp("time"))?.forward(time)?;
     let ada = AdaLayerNormZero::new(config.dim, vb.pp("ada"))?.forward(x, emb)?;
     let final_result = AdaLayerNormZeroFinal::new(config.dim, vb.pp("final"))?.forward(x, emb)?;
+    let feedforward = FeedForward::new(config.dim, 2, vb.pp("feedforward"))?.forward(x)?;
     let outputs = [
         ("time", time_result),
         ("ada.x", ada.0),
@@ -66,6 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("ada.scale_mlp", ada.3),
         ("ada.gate_mlp", ada.4),
         ("final", final_result),
+        ("feedforward", feedforward),
     ];
     let mut results = serde_json::Map::new();
     for (name, tensor) in outputs {

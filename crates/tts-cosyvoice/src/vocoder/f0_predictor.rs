@@ -3,7 +3,7 @@
 //! Predicts fundamental frequency (F0) from mel spectrogram features.
 //! Uses causal convolutions for streaming inference support.
 
-use candle::{Module, Result, Tensor};
+use candle::{DType, Device, Module, Result, Tensor};
 use candle_nn::{Conv1d, Conv1dConfig, Linear, VarBuilder};
 
 use crate::activations::Elu;
@@ -92,7 +92,8 @@ impl Module for CausalConv1d {
 ///
 /// # CPU Fallback
 /// Important note from source: F0 predictor accuracy is critical for causal inference.
-/// Numerical precision issues may occur on GPU, so the official implementation forces CPU execution.
+/// The official inference method uses float64 for this component. CPU execution
+/// also permits this precision on devices whose kernels do not support float64.
 #[derive(Debug)]
 pub struct CausalConvRNNF0Predictor {
     /// 5 conv layers (alternating conv and activation)
@@ -103,9 +104,7 @@ pub struct CausalConvRNNF0Predictor {
     in_channels: usize,
     /// Condition channels
     cond_channels: usize,
-    /// Whether to force CPU execution (recommended: true)
-    #[allow(dead_code)]
-    force_cpu: bool,
+    device: Device,
 }
 
 impl CausalConvRNNF0Predictor {
@@ -118,19 +117,22 @@ impl CausalConvRNNF0Predictor {
     /// * `vb` - VarBuilder
     ///
     /// # Note
-    /// When `force_cpu=true`, the forward pass will execute on CPU for precision.
-    /// The official Python implementation explicitly moves F0 predictor to CPU:
-    /// "NOTE f0_predictor precision is crucial for causal inference"
-    ///
-    /// IMPORTANT: The weights are loaded on the VarBuilder's device. When force_cpu=true,
-    /// the input is moved to CPU, and since Candle operations automatically handle
-    /// device mismatches by moving tensors, the computation will happen on CPU.
+    /// Weights and inputs use float64, matching the official inference method.
+    /// `force_cpu=true` explicitly loads weights on CPU; the output is moved back
+    /// to the input device. Candle does not implicitly move mismatched tensors.
     pub fn new(
         in_channels: usize,
         cond_channels: usize,
         force_cpu: bool,
         vb: VarBuilder,
     ) -> Result<Self> {
+        let vb = if force_cpu {
+            vb.set_device(Device::Cpu)
+        } else {
+            vb
+        }
+        .set_dtype(DType::F64);
+        let device = vb.device().clone();
         let mut condnet = Vec::new();
 
         // Layer 1: in_channels -> cond_channels, kernel=4, causal_type='right'
@@ -165,7 +167,7 @@ impl CausalConvRNNF0Predictor {
             classifier,
             in_channels,
             cond_channels,
-            force_cpu,
+            device,
         })
     }
 
@@ -177,14 +179,11 @@ impl CausalConvRNNF0Predictor {
     ///
     /// # Note
     /// F0 prediction requires high precision. The official Python implementation
-    /// moves the F0 predictor to CPU for this reason. Here we ensure F32 precision
-    /// is used throughout the computation.
+    /// uses float64 for this component. Output retains the caller's dtype/device.
     pub fn forward(&self, x: &Tensor, finalize: bool) -> Result<Tensor> {
         let original_dtype = x.dtype();
-
-        // CRITICAL: Use F32 precision for F0 prediction to avoid numerical issues
-        // This is especially important on Metal/CUDA where F16 can cause precision loss
-        let x = x.to_dtype(candle::DType::F32)?;
+        let original_device = x.device();
+        let x = x.to_device(&self.device)?.to_dtype(DType::F64)?;
 
         let mut x = x;
 
@@ -218,12 +217,7 @@ impl CausalConvRNNF0Predictor {
         // F0 must be positive
         let f0 = f0.abs()?;
 
-        // Convert back to original dtype if needed
-        if original_dtype != candle::DType::F32 {
-            f0.to_dtype(original_dtype)
-        } else {
-            Ok(f0)
-        }
+        f0.to_dtype(original_dtype)?.to_device(original_device)
     }
 
     /// Get configuration info

@@ -1,31 +1,48 @@
-//! Run a short, greedy pretrained CosyVoice synthesis from saved prompt features.
+//! Run pretrained CosyVoice synthesis from saved public prompt features.
 use candle::{DType, Device};
 use serde::Serialize;
 use tts_cosyvoice::{CosyVoice3, PromptFeatures, SynthesisOptions};
 
 #[derive(Serialize)]
 struct Output {
+    text: String,
+    sampling: String,
     sample_rate: u32,
+    tokens: Vec<u32>,
     samples: Vec<f32>,
     elapsed_seconds: f64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().collect();
-    if args.len() != 4 {
-        return Err("usage: synthesize_probe MODEL_DIR PROMPT_JSON OUTPUT_JSON".into());
+    if !(4..=6).contains(&args.len()) {
+        return Err(
+            "usage: synthesize_probe MODEL_DIR PROMPT_JSON OUTPUT_JSON [greedy|sample] [TEXT]"
+                .into(),
+        );
+    }
+    let sampling = args.get(4).and_then(|x| x.to_str()).unwrap_or("greedy");
+    let text = args.get(5).and_then(|x| x.to_str()).unwrap_or("你好。");
+    if !matches!(sampling, "greedy" | "sample") {
+        return Err("sampling must be greedy or sample".into());
     }
     let prompt: PromptFeatures = serde_json::from_slice(&std::fs::read(&args[2])?)?;
     let started = std::time::Instant::now();
     eprintln!("loading Candle model");
     let mut model = CosyVoice3::load(&args[1], &Device::Cpu, DType::F32)?;
     let mut options = SynthesisOptions::default();
-    options.sampling.temperature = 0.0;
-    options.sampling.max_tokens = 32;
-    eprintln!("generating short greedy probe");
-    let samples = model.synthesize("你好。", &prompt, &options)?;
+    if sampling == "greedy" {
+        options.sampling.temperature = 0.0;
+    }
+    options.sampling.max_tokens = 128;
+    eprintln!("generating {sampling} probe");
+    let tokens = model.generate_tokens(text, &prompt, &options)?;
+    let samples = model.decode_tokens(&tokens, &prompt, options.flow_steps)?;
     let output = Output {
+        text: text.to_owned(),
+        sampling: sampling.to_owned(),
         sample_rate: model.sample_rate(),
+        tokens,
         samples,
         elapsed_seconds: started.elapsed().as_secs_f64(),
     };

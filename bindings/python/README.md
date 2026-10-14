@@ -44,6 +44,8 @@ runtime from the repository root:
 python scripts/install_onnxruntime.py --output .cache/onnxruntime
 ```
 
+This repository development tool requires Python 3.12+ for safe archive extraction. This does not change the wheel's CPython 3.10+ requirement.
+
 Then set the environment before constructing a CosyVoice3 engine:
 
 ```python

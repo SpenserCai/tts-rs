@@ -188,6 +188,18 @@ impl CosyVoice3 {
         prompt: &PromptFeatures,
         options: &SynthesisOptions,
     ) -> Result<Vec<f32>> {
+        let tokens = self.generate_tokens(text, prompt, options)?;
+        self.decode_tokens(&tokens, prompt, options.flow_steps)
+    }
+
+    /// Generate semantic speech tokens with the same conditioning as synthesis.
+    /// This exposes the discrete intermediate for reproducible stage comparisons.
+    pub fn generate_tokens(
+        &mut self,
+        text: &str,
+        prompt: &PromptFeatures,
+        options: &SynthesisOptions,
+    ) -> Result<Vec<u32>> {
         prompt.validate()?;
         if text.trim().is_empty()
             || text.len() > 32_768
@@ -227,6 +239,9 @@ impl CosyVoice3 {
                 false,
             ),
             SynthesisMode::Instruct(instruction) => {
+                if instruction.trim().is_empty() || instruction.len() > 32_768 {
+                    candle::bail!("style instruction requires 1..=32768 bytes");
+                }
                 (format!("{instruction}<|endofprompt|>"), false)
             }
         };
@@ -242,10 +257,7 @@ impl CosyVoice3 {
         } else {
             Tensor::zeros((1, 0), DType::U32, &self.device)?
         };
-        let tokens = self
-            .llm
-            .inference(&text_ids, &prefix_ids, &lm_reference, s)?;
-        self.decode_tokens(&tokens, prompt, options.flow_steps)
+        self.llm.inference(&text_ids, &prefix_ids, &lm_reference, s)
     }
 
     /// Decode supplied speech tokens, bypassing stochastic language-model sampling.

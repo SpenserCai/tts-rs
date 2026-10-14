@@ -10,14 +10,17 @@ impl Qwen3TTS {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```no_run
     /// use tts_qwen::{Qwen3TTS, Speaker, Language, SynthesisOptions};
-    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let model = Qwen3TTS::from_pretrained("path/to/custom-voice", candle_core::Device::Cpu)?;
     /// let options = SynthesisOptions::default();
     /// for chunk in model.synthesize_streaming("Hello!", Speaker::Ryan, Language::English, options)? {
-    ///     let audio = chunk?;
-    ///     // Play or process audio chunk (each ~800ms)
+    ///     let _audio = chunk?;
+    ///     // Pass this chunk to the application's audio output.
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn synthesize_streaming(
         &self,
@@ -120,9 +123,8 @@ impl<'a> StreamingSession<'a> {
         let (trailing_text_hidden, trailing_text_len, tts_pad_embed) =
             model.build_trailing_text(input_ids)?;
 
-        let mut kv_caches = model
-            .talker
-            .new_kv_caches(config.max_new_tokens + input_ids.len() + 16);
+        let mut kv_caches =
+            model.generation_caches(config.max_new_tokens, &[input_ids.len(), 16])?;
         let prefill_result =
             model
                 .talker
@@ -158,9 +160,10 @@ impl<'a> StreamingSession<'a> {
         let (trailing_text_hidden, trailing_text_len, tts_pad_embed) =
             model.build_trailing_text(input_ids)?;
 
-        let mut kv_caches = model
-            .talker
-            .new_kv_caches(config.max_new_tokens + input_ids.len() + instruct_ids.len() + 16);
+        let mut kv_caches = model.generation_caches(
+            config.max_new_tokens,
+            &[input_ids.len(), instruct_ids.len(), 16],
+        )?;
         let prefill_result =
             model
                 .talker

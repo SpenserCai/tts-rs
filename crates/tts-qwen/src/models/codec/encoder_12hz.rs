@@ -27,6 +27,19 @@ use std::path::Path;
 
 use crate::audio::AudioBuffer;
 
+fn interleave_rope_weight(weight: &Tensor, heads: usize) -> Result<Tensor> {
+    let (output, input) = weight.dims2()?;
+    anyhow::ensure!(
+        heads > 0 && output % heads == 0 && (output / heads).is_multiple_of(2),
+        "RoPE projection must contain an even number of channels per attention head"
+    );
+    Ok(weight
+        .reshape((heads, 2, output / heads / 2, input))?
+        .transpose(1, 2)?
+        .contiguous()?
+        .reshape((output, input))?)
+}
+
 /// Mimi-based encoder producing 12Hz, 16-codebook codes from raw audio.
 ///
 /// Constructs the encoder-only path from candle's Mimi components (no
@@ -58,7 +71,7 @@ impl Encoder12Hz {
         //   encoder.encoder_transformer.layers.0.*     → encoder_transformer.layers.0.*
         //   encoder.quantizer.*                        → quantizer.*
         //   encoder.downsample.conv.weight             → downsample.conv.weight
-        let encoder_weights: HashMap<String, Tensor> = weights
+        let mut encoder_weights: HashMap<String, Tensor> = weights
             .iter()
             .filter_map(|(k, v)| {
                 k.strip_prefix("encoder.")
@@ -71,6 +84,22 @@ impl Encoder12Hz {
         }
 
         let cfg = mimi::Config::v0_1(Some(16));
+        // Hugging Face stores RoPE channels as [real_half, imaginary_half],
+        // while Candle Mimi rotates adjacent pairs. Reorder only Q/K output
+        // channels within each attention head; V and output projections stay
+        // in their original layout because the attention scores are invariant
+        // under this shared Q/K permutation.
+        for layer in 0..cfg.transformer.num_layers {
+            for projection in ["q_proj", "k_proj"] {
+                let name =
+                    format!("encoder_transformer.layers.{layer}.self_attn.{projection}.weight");
+                let weight = encoder_weights
+                    .get(&name)
+                    .ok_or_else(|| anyhow::anyhow!("missing encoder weight {name}"))?;
+                let permuted = interleave_rope_weight(weight, cfg.transformer.num_heads)?;
+                encoder_weights.insert(name, permuted);
+            }
+        }
         let vb = candle_nn::VarBuilder::from_tensors(encoder_weights, DType::F32, device);
 
         let encoder = mimi::seanet::SeaNetEncoder::new(&cfg.seanet, vb.pp("encoder"))?;
@@ -116,6 +145,33 @@ impl Encoder12Hz {
     /// Input: `AudioBuffer` at 24kHz.
     /// Output: `Tensor` of shape `[T_frames, 16]` containing discrete codes (u32).
     pub fn encode(&self, audio: &AudioBuffer) -> Result<Tensor> {
+        let [_, _, features] = self.features(audio)?;
+        self.encode_features(&features)
+    }
+
+    /// Export encoder stages for pinned Python numerical comparisons.
+    /// Continuous outputs use `[batch, channels, time]`; codes use `[time, 16]`.
+    pub fn encode_with_intermediates(
+        &self,
+        audio: &AudioBuffer,
+    ) -> Result<Vec<(&'static str, Tensor)>> {
+        let [seanet, transformer, downsample] = self.features(audio)?;
+        let codes = self.encode_features(&downsample)?;
+        Ok(vec![
+            ("seanet", seanet),
+            ("transformer", transformer),
+            ("downsample", downsample),
+            ("reference_audio_codes", codes),
+        ])
+    }
+
+    fn features(&self, audio: &AudioBuffer) -> Result<[Tensor; 3]> {
+        anyhow::ensure!(
+            audio.sample_rate == 24_000
+                && !audio.samples.is_empty()
+                && audio.samples.iter().all(|value| value.is_finite()),
+            "codec encoder requires finite nonempty mono PCM at 24000 Hz"
+        );
         let samples = &audio.samples;
 
         // Mimi expects [batch, channels, samples] = [1, 1, N]
@@ -123,19 +179,23 @@ impl Encoder12Hz {
         let input = input.to_dtype(DType::F32)?;
 
         // SEANet encoder: [1, 1, N] → [1, 512, T_25hz]
-        let xs = self.encoder.forward(&input)?;
+        let seanet = self.encoder.forward(&input)?;
 
         // Transformer: [1, 512, T_25hz] → [1, T_25hz, 512] (conv_layout transposes internally)
         let mut transformer = self.encoder_transformer.borrow_mut();
         transformer.reset_state();
-        let xs = transformer.forward(&xs)?;
+        let xs = transformer.forward(&seanet)?;
         let xs = &xs[0];
 
         // Downsample 25Hz → 12.5Hz
-        let xs = xs.apply(&self.downsample)?;
+        let downsample = xs.apply(&self.downsample)?;
 
+        Ok([seanet, xs.clone(), downsample])
+    }
+
+    fn encode_features(&self, features: &Tensor) -> Result<Tensor> {
         // Quantize: [1, 512, T_12hz] → [1, 16, T_12hz]
-        let codes = self.quantizer.encode(&xs)?;
+        let codes = self.quantizer.encode(features)?;
 
         // Transpose to [T_frames, 16]
         let codes = codes.squeeze(0)?.transpose(0, 1)?;
@@ -146,6 +206,26 @@ impl Encoder12Hz {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hf_projection_permutation_preserves_rotary_attention() -> Result<()> {
+        let device = Device::Cpu;
+        let weights = Tensor::arange(1f32, 9f32, &device)?.reshape((8, 1))?;
+        let split = weights.reshape((1, 2, 1, 4))?;
+        let paired = interleave_rope_weight(&weights, 2)?.reshape((1, 2, 1, 4))?;
+        let angles = Tensor::new(&[[0.4f32, 0.9]], &device)?;
+        let cosine = angles.cos()?;
+        let sine = angles.sin()?;
+        let split_rotated = candle_nn::rotary_emb::rope(&split, &cosine, &sine)?;
+        let paired_rotated = candle_nn::rotary_emb::rope_i(&paired, &cosine, &sine)?;
+        let expected = interleave_rope_weight(&split_rotated.reshape((8, 1))?, 2)?;
+        let difference = (paired_rotated.flatten_all()? - expected.flatten_all()?)?
+            .abs()?
+            .max_all()?
+            .to_scalar::<f32>()?;
+        assert!(difference < 1e-6);
+        Ok(())
+    }
 
     #[test]
     fn test_strip_encoder_prefix() {

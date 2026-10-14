@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from importlib.metadata import version
 import json
 import math
 import os
@@ -17,16 +18,28 @@ ROOT = Path(__file__).resolve().parents[2]
 PINS = json.loads(Path(__file__).with_name("pins.json").read_text())
 
 
+def reference_runtime(model: str) -> dict[str, str]:
+    """Reject a different model family's runtime before importing ML modules."""
+    expected = dict(PINS["runtimes"][model])
+    actual = {name: version(name) for name in expected}
+    mismatched = {name: {"expected": expected[name], "actual": value}
+                  for name, value in actual.items() if value.split("+", 1)[0] != expected[name]}
+    if mismatched:
+        raise RuntimeError(f"{model} reference runtime mismatch: {mismatched}")
+    return actual
+
+
 def offline_reference_runtime() -> None:
-    """Inference uses downloaded files; disable optional library telemetry."""
+    """Request local Hugging Face loading without importing unrelated runtimes.
+
+    These environment settings are not a network security boundary. Run an
+    oracle under an external network policy when verified offline execution is
+    required. Tensor-only oracles must not initialize ONNX Runtime merely to
+    change its telemetry setting.
+    """
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    try:
-        import onnxruntime
-    except ImportError:
-        return
-    onnxruntime.disable_telemetry_events()
 
 
 def sha256(path: Path) -> str:

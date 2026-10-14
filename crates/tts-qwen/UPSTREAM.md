@@ -11,6 +11,8 @@ Changes here:
 - Official attentive-pooling variance floor (`clamp(min=1e-12)`), explicit regex pre-tokenization, automatic language prefix and dynamic prefix lengths.
 - Independent acoustic-predictor sampling with official defaults; no hidden ICL repetition or maximum-length overrides.
 - Reference-length-aware KV capacity, validated generation settings and shared delay-compensated resampling from `tts-core`.
+- Single-pass reference-conditioned prefill, official generation-step accounting, decoder context for streaming chunks and float64 Slaney mel-filter construction.
+- Hugging Face Mimi Q/K projection permutation to Candle's interleaved rotary layout, with a rotary equivalence regression test and encoder-stage oracle.
 - Portable speaker, mel and full synthesis oracle executables for comparison with the pinned Python implementation.
 
 An upstream port is not evidence of numerical parity. Fixtures and full-checkpoint validation record the exact Python revision, weight digest, dtype, device and observed errors. CPU checks do not certify CUDA or Metal parity.

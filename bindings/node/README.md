@@ -47,6 +47,8 @@ For development, provision the pinned official archive from the repository root:
 python scripts/install_onnxruntime.py --output .cache/onnxruntime
 ```
 
+This repository development tool requires Python 3.12+ for safe archive extraction. Node inference itself does not require Python.
+
 The installer writes the resolved library path to `.cache/onnxruntime/runtime.json`:
 
 ```js

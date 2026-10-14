@@ -47,10 +47,10 @@ impl TimestepEmbedding {
         // Python: emb = math.log(10000) / (half_dim - 1)
         //         emb = torch.exp(torch.arange(half_dim, device=device).float() * -emb)
         let log_10000 = 10000f64.ln();
-        let inv_freq: Vec<f32> = (0..half_dim)
-            .map(|i| (-(i as f64) * log_10000 / (half_dim as f64 - 1.0)).exp() as f32)
-            .collect();
-        let inv_freq = Tensor::from_vec(inv_freq, half_dim, device)?;
+        // Upstream performs the multiply and exponential in float32. Computing
+        // the exponential in f64 and only then rounding perturbs later DiT steps.
+        let indices = Tensor::arange(0f32, half_dim as f32, device)?;
+        let inv_freq = (indices * (-log_10000 / (half_dim as f64 - 1.0)))?.exp()?;
 
         // t: [B] -> [B, 1]
         let t = t.unsqueeze(D::Minus1)?;

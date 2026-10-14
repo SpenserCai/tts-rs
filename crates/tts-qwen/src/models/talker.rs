@@ -519,6 +519,39 @@ impl TalkerModel {
         icl_mode: bool,
         kv_caches: &mut [AnyKVCache],
     ) -> Result<(Tensor, Tensor)> {
+        let hidden = self.voice_clone_input(text_tokens, speaker_embed, language, icl_mode)?;
+        self.run_prefill_layers(hidden, kv_caches)
+    }
+
+    /// Prefill the complete reference-conditioned sequence in one forward pass.
+    ///
+    /// Returns hidden states, next-token logits and the unconsumed text embeddings.
+    /// The official implementation concatenates the control prefix and ICL prompt
+    /// before attention, which also keeps floating-point evaluation order aligned.
+    pub fn prefill_voice_clone_icl(
+        &self,
+        text_tokens: &[u32],
+        speaker_embed: &Tensor,
+        language: Language,
+        ref_text_tokens: &[u32],
+        ref_codec_embeds: &Tensor,
+        kv_caches: &mut [AnyKVCache],
+    ) -> Result<(Tensor, Tensor, Tensor)> {
+        let prefix = self.voice_clone_input(text_tokens, speaker_embed, language, true)?;
+        let (icl, trailing) =
+            self.build_icl_prompt(text_tokens, ref_text_tokens, ref_codec_embeds, false)?;
+        let input = Tensor::cat(&[&prefix, &icl], 1)?;
+        let (hidden, logits) = self.run_prefill_layers(input, kv_caches)?;
+        Ok((hidden, logits, trailing))
+    }
+
+    fn voice_clone_input(
+        &self,
+        text_tokens: &[u32],
+        speaker_embed: &Tensor,
+        language: Language,
+        icl_mode: bool,
+    ) -> Result<Tensor> {
         use codec_tokens::*;
 
         let role_prefix_hidden = self.build_role_prefix()?;
@@ -556,7 +589,7 @@ impl TalkerModel {
             }
         }
 
-        self.run_prefill_layers(hidden, kv_caches)
+        Ok(hidden)
     }
 
     /// Prefill for VoiceDesign model with text-described voice conditioning.
@@ -875,8 +908,14 @@ impl TalkerModel {
         super::transformer::create_causal_mask(seq_len, offset, &self.device)
     }
 
-    /// Create new KV caches for generation
-    pub fn new_kv_caches(&self, max_seq: usize) -> Vec<AnyKVCache> {
+    /// Create generation caches within the checkpoint's context window.
+    /// Allocation errors are returned without changing the requested cache strategy.
+    pub fn new_kv_caches(&self, max_seq: usize) -> Result<Vec<AnyKVCache>> {
+        anyhow::ensure!(
+            max_seq > 0 && max_seq <= self.config.max_position_embeddings,
+            "requested context {max_seq} exceeds the checkpoint window {} or is empty",
+            self.config.max_position_embeddings
+        );
         if (self.device.is_cuda() || self.device.is_metal()) && max_seq > 0 {
             let dtype = self.codec_head.weight().dtype();
             (0..self.config.num_hidden_layers)
@@ -890,13 +929,12 @@ impl TalkerModel {
                         &self.device,
                     )
                     .map(AnyKVCache::PreAlloc)
-                    .unwrap_or_else(|_| AnyKVCache::Concat(KVCache::new()))
                 })
                 .collect()
         } else {
-            (0..self.config.num_hidden_layers)
+            Ok((0..self.config.num_hidden_layers)
                 .map(|_| AnyKVCache::Concat(KVCache::new()))
-                .collect()
+                .collect())
         }
     }
 

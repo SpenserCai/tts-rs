@@ -96,5 +96,5 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: wasm
-      - run: cargo install wasm-pack --version 0.15.0 --locked
+      - run: python scripts/install_wasm_pack.py --github-path
       - run: python scripts/ci.py bindings --kind wasm

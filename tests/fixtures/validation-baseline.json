@@ -1,0 +1,640 @@
+{
+  "schema_version": 1,
+  "kind": "observed numerical validation baseline, not a universal quality claim",
+  "observed_date": "2026-10-14",
+  "environment": {
+    "platform": "Linux x86_64",
+    "python": "3.12.14",
+    "torch": "2.10.0+cpu",
+    "candle": "0.9.2"
+  },
+  "cases": [
+    {
+      "case": "qwen-speaker-synthetic",
+      "scope": "mel -> ECAPA-TDNN -> speaker embedding; excludes acoustic frontend and synthesis",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+      "weights_sha256": "4ff449e5e90cad1802f66f212cfba793bc2e944cf121542c946ae9d746ff08bd",
+      "tensor_metrics": {
+        "speaker_embedding": {
+          "passed": true,
+          "elements": 16,
+          "max_absolute_error": 7.450580596923828e-09,
+          "mean_absolute_error": 1.0477378964424133e-09,
+          "root_mean_square_error": 2.3283064365386963e-09,
+          "max_relative_error": 1.0623802033523194e-07,
+          "cosine_similarity": 0.9999999999999991,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      }
+    },
+    {
+      "case": "qwen-speaker-pretrained",
+      "scope": "mel -> ECAPA-TDNN -> speaker embedding; excludes acoustic frontend and synthesis",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+      "weights_sha256": "23cf7dcd29227863f2a2ff64616a172b14fecb4bb304fde469be0a229005173e",
+      "tensor_metrics": {
+        "speaker_embedding": {
+          "passed": true,
+          "elements": 1024,
+          "max_absolute_error": 4.291534423828125e-06,
+          "mean_absolute_error": 1.4477973309112713e-07,
+          "root_mean_square_error": 2.326112520221646e-07,
+          "max_relative_error": 0.007234868537144874,
+          "cosine_similarity": 0.9999999999996596,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      }
+    },
+    {
+      "case": "cosyvoice-dit-conditioning",
+      "scope": "TimestepEmbedding, adaptive normalization and tanh-GELU FeedForward; excludes full DiT/flow/vocoder",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+      "weights_sha256": "5905cc78c32f56ccf594b609cc86359309578e20f44a014fa2748c91f9a47c0e",
+      "tensor_metrics": {
+        "ada.gate_mlp": {
+          "passed": true,
+          "elements": 48,
+          "max_absolute_error": 2.9802322387695312e-08,
+          "mean_absolute_error": 5.607338001330693e-09,
+          "root_mean_square_error": 8.782994055124007e-09,
+          "max_relative_error": 5.543165261395085e-07,
+          "cosine_similarity": 0.999999999999997,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "ada.gate_msa": {
+          "passed": true,
+          "elements": 48,
+          "max_absolute_error": 2.9802322387695312e-08,
+          "mean_absolute_error": 5.549130340417226e-09,
+          "root_mean_square_error": 9.493858046440426e-09,
+          "max_relative_error": 9.281827851795198e-07,
+          "cosine_similarity": 0.9999999999999971,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "ada.scale_mlp": {
+          "passed": true,
+          "elements": 48,
+          "max_absolute_error": 2.9802322387695312e-08,
+          "mean_absolute_error": 5.5103252331415815e-09,
+          "root_mean_square_error": 9.96558673634785e-09,
+          "max_relative_error": 4.936838093432623e-07,
+          "cosine_similarity": 0.9999999999999964,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "ada.shift_mlp": {
+          "passed": true,
+          "elements": 48,
+          "max_absolute_error": 3.725290298461914e-08,
+          "mean_absolute_error": 6.2767261018355685e-09,
+          "root_mean_square_error": 1.1102262584016187e-08,
+          "max_relative_error": 1.2384937735964027e-06,
+          "cosine_similarity": 0.9999999999999967,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "ada.x": {
+          "passed": true,
+          "elements": 240,
+          "max_absolute_error": 1.9073486328125e-06,
+          "mean_absolute_error": 3.8955671091874443e-07,
+          "root_mean_square_error": 6.146504624292417e-07,
+          "max_relative_error": 0.0002790421876907515,
+          "cosine_similarity": 0.9999999999998043,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "feedforward": {
+          "passed": true,
+          "elements": 240,
+          "max_absolute_error": 7.450580596923828e-09,
+          "mean_absolute_error": 1.2689270079135895e-09,
+          "root_mean_square_error": 2.0864016206208478e-09,
+          "max_relative_error": 1.2328405408180053e-06,
+          "cosine_similarity": 0.9999999999999981,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "final": {
+          "passed": true,
+          "elements": 240,
+          "max_absolute_error": 1.6689300537109375e-06,
+          "mean_absolute_error": 3.9843531946341196e-07,
+          "root_mean_square_error": 6.333897830083527e-07,
+          "max_relative_error": 3.9846835990042665e-05,
+          "cosine_similarity": 0.9999999999998038,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "time": {
+          "passed": true,
+          "elements": 48,
+          "max_absolute_error": 2.086162567138672e-07,
+          "mean_absolute_error": 6.265084569652875e-08,
+          "root_mean_square_error": 9.357909348276886e-08,
+          "max_relative_error": 2.6529421128030986e-05,
+          "cosine_similarity": 0.999999999999236,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      }
+    },
+    {
+      "case": "qwen-base-0.6b-full-synthesis-analytic-conditioning",
+      "scope": "full x-vector conditioning, main/subtalker greedy generation and waveform decoder; 20-token bounded smoke test, no voice-quality claim",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+      "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+      "weights_sha256": "180b3b10eb1c9f1b4db7806d5475bae3071c0243c299d49926bab1da3b6946f6",
+      "sample_rate": 24000,
+      "tensor_metrics": {
+        "audio_codes": {
+          "passed": true,
+          "elements": 304,
+          "max_absolute_error": 0,
+          "mean_absolute_error": 0.0,
+          "root_mean_square_error": 0.0,
+          "max_relative_error": 0.0,
+          "cosine_similarity": 0.9999999999999999,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "exact"
+        },
+        "speaker_embedding": {
+          "passed": true,
+          "elements": 1024,
+          "max_absolute_error": 4.76837158203125e-06,
+          "mean_absolute_error": 6.61882950225845e-07,
+          "root_mean_square_error": 8.486078145713102e-07,
+          "max_relative_error": 0.009713591886293836,
+          "cosine_similarity": 0.9999999999968586,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "waveform": {
+          "passed": true,
+          "elements": 36480,
+          "max_absolute_error": 3.8580765249207616e-09,
+          "mean_absolute_error": 6.988999320798795e-10,
+          "root_mean_square_error": 8.753037897130503e-10,
+          "max_relative_error": 0.0003454667465860523,
+          "cosine_similarity": 0.999999996910388,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      }
+    },
+    {
+      "case": "qwen-base-0.6b-full-icl-public-conditioning",
+      "scope": "public analytic-conditioned generated audio + transcript -> reference codec, speaker, main/subtalker and waveform; bounded numerical smoke, not voice quality",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+      "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+      "tensor_metrics": {
+        "audio_codes": {
+          "passed": true,
+          "elements": 304,
+          "max_absolute_error": 0,
+          "mean_absolute_error": 0.0,
+          "root_mean_square_error": 0.0,
+          "max_relative_error": 0.0,
+          "cosine_similarity": 1.0000000000000002,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "exact"
+        },
+        "speaker_embedding": {
+          "passed": true,
+          "elements": 1024,
+          "max_absolute_error": 1.049041748046875e-05,
+          "mean_absolute_error": 2.861006578314118e-07,
+          "root_mean_square_error": 4.927721299889825e-07,
+          "max_relative_error": 0.0010865807280090877,
+          "cosine_similarity": 0.9999999999964714,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "waveform": {
+          "passed": true,
+          "elements": 36480,
+          "max_absolute_error": 3.761670086532831e-09,
+          "mean_absolute_error": 6.963460171056412e-10,
+          "root_mean_square_error": 8.731682901261834e-10,
+          "max_relative_error": 0.0003366478824310991,
+          "cosine_similarity": 0.9999999969343486,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      },
+      "reference_codec_metrics": {
+        "reference_audio_codes": {
+          "passed": true,
+          "elements": 304,
+          "max_absolute_error": 0,
+          "mean_absolute_error": 0.0,
+          "root_mean_square_error": 0.0,
+          "max_relative_error": 0.0,
+          "cosine_similarity": 1.0,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "exact"
+        }
+      }
+    },
+    {
+      "case": "cosyvoice-hift-pretrained",
+      "scope": "official public mel -> complete HiFT waveform; exact shared source phase/sine/UV; F0 float64, remaining float32; excludes LLM/flow",
+      "passed": true,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+      "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "tensor_metrics": {
+        "waveform": {
+          "passed": true,
+          "elements": 15360,
+          "max_absolute_error": 7.852911949157715e-06,
+          "mean_absolute_error": 3.166263258610489e-07,
+          "root_mean_square_error": 7.651388912411297e-07,
+          "max_relative_error": 0.9023941630157977,
+          "cosine_similarity": 0.9999999999028475,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      },
+      "weights_sha256": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65"
+    },
+    {
+      "case": "cosyvoice-flow-pretrained-diagnostic",
+      "scope": "official token-conditioned flow; excludes LLM and HiFT",
+      "passed": false,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+      "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "weights_sha256": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+      "tensor_metrics": {
+        "mel": {
+          "passed": false,
+          "elements": 1280,
+          "max_absolute_error": 0.0005249977111816406,
+          "mean_absolute_error": 6.89364067511633e-05,
+          "root_mean_square_error": 9.394957128111427e-05,
+          "max_relative_error": 0.006533877039288188,
+          "cosine_similarity": 0.9999999998328075,
+          "failing_elements": 43,
+          "first_failing_indices": [
+            91,
+            93,
+            94,
+            100,
+            101,
+            104,
+            105,
+            116,
+            117,
+            118,
+            119,
+            121,
+            202,
+            203,
+            217,
+            219
+          ],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      },
+      "runtime": {
+        "torch": "2.10.0+cpu",
+        "transformers": "4.57.3"
+      },
+      "limitation": "Historical diagnostic used newer runtime dependencies than upstream requirements; retained failed result, not the acceptance oracle."
+    },
+    {
+      "case": "cosyvoice-llm-pretrained-diagnostic",
+      "scope": "official LM first raw logits and greedy speech tokens; excludes flow and HiFT",
+      "passed": false,
+      "dtype": "float32",
+      "device": "cpu",
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+      "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "weights_sha256": "69f43bd545131c30e98947fb360ea8b4dc9916d8e83dded7757c7ea4f5a24970",
+      "tensor_metrics": {
+        "first_logits": {
+          "passed": true,
+          "elements": 6761,
+          "max_absolute_error": 1.33514404296875e-05,
+          "mean_absolute_error": 1.8830290054573214e-06,
+          "root_mean_square_error": 2.365623535977969e-06,
+          "max_relative_error": 0.002286374714203161,
+          "cosine_similarity": 0.9999999999998401,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "generated_tokens": {
+          "passed": false,
+          "elements": 60,
+          "max_absolute_error": 28,
+          "mean_absolute_error": 27.533333333333335,
+          "root_mean_square_error": 27.76568625720123,
+          "max_relative_error": 28.0,
+          "cosine_similarity": 0.378691704962503,
+          "failing_elements": 59,
+          "first_failing_indices": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "comparison": "exact"
+        }
+      },
+      "runtime": {
+        "torch": "2.10.0+cpu",
+        "transformers": "4.57.3",
+        "attention_implementation": "eager"
+      },
+      "limitation": "Historical diagnostic used newer runtime dependencies than upstream requirements; retained failed result, not the acceptance oracle."
+    }
+  ],
+  "limits": [
+    "Accelerator numerical parity has not been executed on this host.",
+    "Pretrained HiFT parity does not establish complete CosyVoice LLM/flow/waveform chain parity.",
+    "Bounded analytic-conditioning Qwen fixtures do not establish perceptual quality, natural EOS completion or every codec intermediate tolerance.",
+    "No private audio, speaker vectors or private integration context is included.",
+    "Historical CosyVoice diagnostic cases used Torch 2.10/Transformers 4.57.3 rather than upstream 2.3.1/4.51.3; those runtime differences require a separate pinned rerun before acceptance."
+  ],
+  "benchmarks": [
+    {
+      "case": "qwen-base-0.6b-resident-cpu",
+      "scope": "real resident-model Qwen CPU synthesis throughput; analytic conditioning; no audio quality claim",
+      "environment": {
+        "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+        "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+        "requested_threads": 1
+      },
+      "resource_isolation": "not established; shared-machine activity and filesystem caches can affect timings",
+      "reference_implementation_pin": {
+        "repository": "https://github.com/Qwen/Qwen3-TTS.git",
+        "revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+        "model_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc"
+      },
+      "cargo_lock_sha256": "e43dc7a981d7c7f7de012c6bcfe593b66e93b977fd558122dcd9904a448cdc42",
+      "source_files_sha256": {
+        "crates/tts-core/Cargo.toml": "a3116588e849f446ad83139915666712ddbd4f43ffc16d4c1fa0bc63c3026d4a",
+        "crates/tts-core/benches/audio.rs": "3a71a07e9e45c0a442964e3e129b1fb322f88fb9b61d188f582907ee65e8f783",
+        "crates/tts-core/src/audio.rs": "8688ad7293f506f6522d1ade0d5084e1c4a4cdcbd2c54a12a8a0a56a32bb4a65",
+        "crates/tts-core/src/contract.rs": "d3eb91eda63971c212886c31b7eff99cfe277d089826c775d0388a09ac0e2459",
+        "crates/tts-core/src/lib.rs": "18f2a181550271a322a32f979464d7c6b84e54a6fe4a3eee062f5e9a5d414546",
+        "crates/tts-qwen/Cargo.toml": "965890691fe9e93f32bf1b8e7f15b8dfc769ca62fa2d1fb66886967526209c55",
+        "crates/tts-qwen/examples/codec_encoder_oracle.rs": "e6f9115608f90d22d87f9f3d70d844951cdf2cffd4023c8eb2e28bc18fae9f82",
+        "crates/tts-qwen/examples/mel_oracle.rs": "c691642a6dd8e6a224fe03f2b47afc9d90b1905fe047b93b64cdb8c7fc38ed68",
+        "crates/tts-qwen/examples/speaker_oracle.rs": "b7ce642efbfd1236774a3379de97b846deb6c324615a46aa15ef31b034c29c37",
+        "crates/tts-qwen/examples/synthesis_oracle.rs": "39c9d042cab09f0edc39fd0b75a51ad811f6b1b36f3132de1b8cf31a0e1f48d5",
+        "crates/tts-qwen/examples/tts_benchmark.rs": "41ead87dc4eb92dda7c03b95e409557ba1c56928003dcb38c873cb7c0a078d01",
+        "crates/tts-qwen/src/audio/io.rs": "68c40e4d110b1d9970b91979746b9dabd3b2d0a63b8333d1d7f0fa6a942027ff",
+        "crates/tts-qwen/src/audio/mel.rs": "dae8d76419e91f27da3ee1ca6a1fde10d8af369c3c072febe9bb6941f3118dfe",
+        "crates/tts-qwen/src/audio/mod.rs": "12cd0cfd961e7fd396f44cf59fdf094efe259448f06e18bcbeecab30312e3763",
+        "crates/tts-qwen/src/audio/resample.rs": "dbac3d2f43823fc095cf75141755ee64f2ec8b294305f5580b53d74c2a472fb3",
+        "crates/tts-qwen/src/engine/loading.rs": "593051618795cb571dbca21ede886fd6815c5f8e31c0c3593caf2be8f7836a2e",
+        "crates/tts-qwen/src/engine/mod.rs": "74dc8d77c3a6caa295aa1403bf296530950bb26bb8242e3d5972a557b36af808",
+        "crates/tts-qwen/src/engine/options.rs": "a99c0411d97528f1535413b39438245ce66ba4361f5d13929848a87a6bd17732",
+        "crates/tts-qwen/src/engine/streaming.rs": "a3ae092355368ba63447119dfbaa9417459638ff1dd6fa578ac02adeef54df28",
+        "crates/tts-qwen/src/engine/synthesis.rs": "f625ac8d8c11ec642c3c8f05d4573fefbc6e54e722056716d5c69e65ac8aa45e",
+        "crates/tts-qwen/src/engine/voice_clone.rs": "e67a4fe16afe76872ecf172cee0cdd824605e473a0212b68c90783fd38efc2f7",
+        "crates/tts-qwen/src/generation/mod.rs": "4524ae159ae521ec584bdfb019067e05cc9a0ccd84e6f90f4d0072e8c3e3a37c",
+        "crates/tts-qwen/src/generation/sampling.rs": "fff22ca4e3b0f455bda6d1de44ff27aa48b62638cb803a822aef37ba735d4738",
+        "crates/tts-qwen/src/generation/tts.rs": "547007ddb333ee55c6f9d82c4b41a55eb4f2b014c021ac4523fe5e68d2882bcf",
+        "crates/tts-qwen/src/lib.rs": "231e8f45bdf7c6171ba80f0614457269229ff925654d288922268fd6f7084fe6",
+        "crates/tts-qwen/src/models/code_predictor.rs": "4171cd45f534b7ebf2dc2412c93234aade39c3d9323f628dbe28648d423d2977",
+        "crates/tts-qwen/src/models/codec/causal_conv.rs": "5d0d0ea07b49c050025f0b467438f0cc23847666188ccaa9c6c55f8fed83dee0",
+        "crates/tts-qwen/src/models/codec/causal_trans_conv.rs": "f3c1faa06983a7a894bcdabae02f5e52ebfaa2e0ba12feaccc1ad463fdfbdea4",
+        "crates/tts-qwen/src/models/codec/convnext_block.rs": "8db80983244074e60c71545c6d11dc38568e3807f49bcfe474c9eda2768feda5",
+        "crates/tts-qwen/src/models/codec/decoder.rs": "5fa68b950a0a57e76f5fa751f337a2f8136f4e6933f718a3380067dea139df87",
+        "crates/tts-qwen/src/models/codec/decoder_12hz.rs": "0a80aa269c87f5d32c39e8a2411fa1fc7b6b4ebba163ad5f5d2d6380ebdbfdd5",
+        "crates/tts-qwen/src/models/codec/decoder_block.rs": "edb9d8d8421d1d073fd26965239154ea6d1439bd781bd6bf363aaeb5835ec56d",
+        "crates/tts-qwen/src/models/codec/encoder_12hz.rs": "1373a6caf5fe1b638f8a355c6aeadae31ced568bbca60e86c97e823ddc868d5a",
+        "crates/tts-qwen/src/models/codec/mod.rs": "4e4e9dc134230ee028f9e862519c2a53cb1b48d3225a80c3fc019740fd46f2c5",
+        "crates/tts-qwen/src/models/codec/quantizer.rs": "d859702ef8e6bc7c60fe8d0eef8d03abbf1f55ff3cf341c5931adcef9503edba",
+        "crates/tts-qwen/src/models/codec/snake_beta.rs": "202dde08f3724049971a9876c10f22cef9683ff057192fa74f2bf2d025aa5db6",
+        "crates/tts-qwen/src/models/config.rs": "9756152278e8dfbdd2f807e6cb9930984f9720ae6457cf147e2735d221af4108",
+        "crates/tts-qwen/src/models/fused_ops.rs": "ec68bfb230fc581ee44921d9f374b0b84a0adcb37e5a3e29af8378d50c14628d",
+        "crates/tts-qwen/src/models/kv_cache.rs": "bf277d086a5e6c40be44dc0ab8cb5251f41b9f0744ad4299c7c7bea23a27b519",
+        "crates/tts-qwen/src/models/mod.rs": "94adabaeccbd8c7d4974e990ea93135ca134582d171d41157bb5fd83a2579118",
+        "crates/tts-qwen/src/models/speaker.rs": "203ff1cb00ddbee167ee9137bcc1b306112e6ec08ba6f3bfdfe1bc5c9ed2ef9e",
+        "crates/tts-qwen/src/models/talker.rs": "1812e0b3c6b3dfa5514666378f10e80d6696e6310fbb852ad6e6e099363eb985",
+        "crates/tts-qwen/src/models/transformer.rs": "2ad294654fd5eb3fb511b7263eeb1e8488c68592567f80e0f35491adf90ea8f8",
+        "crates/tts-qwen/src/tokenizer/mod.rs": "84036c07e331fc3f307939e4bce6264dbeb9b0d9218dc37c251e2e868c6984c3",
+        "crates/tts-qwen/src/tokenizer/text.rs": "eb816baeef5621fdb165f60c33135d46580d38757f4003e824b4e753d6cf4ed1"
+      },
+      "binary_sha256": "e357b2ce0f882a1227ae0100b265213d86b926bf283f690d8d6190352101b6ff",
+      "source_revision": "fbc07b866549cdbead293ceeb9b76889316e2cc7",
+      "source_dirty": true,
+      "source_diff_sha256": "f73c2d2f9105d092f4f7ff615566ccbf6612103f4e5c6e9e24f83469727ce575",
+      "measurements": {
+        "conditioning": "x_vector_only",
+        "crate_version": "0.1.0",
+        "device": "cpu",
+        "dtype": "float32",
+        "greedy_outputs_identical": true,
+        "implementation": "tts-qwen",
+        "load_seconds": 5.93471435,
+        "options": {
+          "max_new_tokens": 20,
+          "min_new_tokens": 2,
+          "repetition_penalty": 1.05,
+          "seed": 42,
+          "subtalker_temperature": 0,
+          "temperature": 0
+        },
+        "passed": true,
+        "rayon_threads": 1,
+        "reference_audio_seconds": 1.0,
+        "runs": 2,
+        "samples": [
+          {
+            "audio_samples": 36480,
+            "audio_seconds": 1.52,
+            "codec_frames": 19,
+            "decode_seconds": 2.006050993,
+            "extract_seconds": 0.029774918,
+            "generate_seconds": 6.128841989,
+            "prefill_seconds": 0.47411368,
+            "reached_token_budget": true,
+            "request_rtf": 5.683548126973684,
+            "request_seconds": 8.638993153,
+            "run": 0,
+            "sample_rate": 24000,
+            "synthesis_rtf": 5.663959220394736,
+            "synthesis_seconds": 8.609218015
+          },
+          {
+            "audio_samples": 36480,
+            "audio_seconds": 1.52,
+            "codec_frames": 19,
+            "decode_seconds": 1.746477788,
+            "extract_seconds": 0.036224774,
+            "generate_seconds": 5.651394358,
+            "prefill_seconds": 0.597813354,
+            "reached_token_budget": true,
+            "request_rtf": 5.284194078947368,
+            "request_seconds": 8.031975,
+            "run": 1,
+            "sample_rate": 24000,
+            "synthesis_rtf": 5.260361825657895,
+            "synthesis_seconds": 7.995749975
+          }
+        ],
+        "schema_version": 1,
+        "timing": {
+          "decode": "codec-to-PCM forward pass",
+          "extract": "speaker feature extraction and prompt construction repeated per request; source WAV I/O excluded",
+          "generate": "autoregressive semantic and acoustic codec prediction",
+          "load": "one local checkpoint load; includes text tokenizer and all model components; filesystem caches are not flushed",
+          "prefill": "text tokenization, cache allocation and prefill forward pass",
+          "request_rtf": "extraction plus synthesis wall time / actual generated audio duration; excludes load",
+          "scope": "bounded short-request CPU throughput probe; not time-to-first-audio, natural-EOS latency or perceptual quality",
+          "synthesis_rtf": "synthesis wall time / actual generated audio duration; excludes load and extraction",
+          "warmups": "complete extraction and synthesis runs on the resident model, excluded from measured samples"
+        },
+        "warmups": 1
+      },
+      "summary": {
+        "extract_seconds": {
+          "mean": 0.032999846,
+          "median": 0.032999846,
+          "min": 0.029774918,
+          "max": 0.036224774,
+          "p95": 0.035902281200000004,
+          "standard_deviation": 0.004560736915276741
+        },
+        "prefill_seconds": {
+          "mean": 0.535963517,
+          "median": 0.535963517,
+          "min": 0.47411368,
+          "max": 0.597813354,
+          "p95": 0.5916283703,
+          "standard_deviation": 0.08746887831596528
+        },
+        "generate_seconds": {
+          "mean": 5.890118173499999,
+          "median": 5.890118173499999,
+          "min": 5.651394358,
+          "max": 6.128841989,
+          "p95": 6.104969607449999,
+          "standard_deviation": 0.33760645754155216
+        },
+        "decode_seconds": {
+          "mean": 1.8762643905,
+          "median": 1.8762643905,
+          "min": 1.746477788,
+          "max": 2.006050993,
+          "p95": 1.9930723327500002,
+          "standard_deviation": 0.18354597346982593
+        },
+        "synthesis_seconds": {
+          "mean": 8.302483995,
+          "median": 8.302483995,
+          "min": 7.995749975,
+          "max": 8.609218015,
+          "p95": 8.578544613,
+          "standard_deviation": 0.4337874111252201
+        },
+        "request_seconds": {
+          "mean": 8.335484076499998,
+          "median": 8.335484076499998,
+          "min": 8.031975,
+          "max": 8.638993153,
+          "p95": 8.60864224535,
+          "standard_deviation": 0.4292266522896334
+        },
+        "audio_seconds": {
+          "mean": 1.52,
+          "median": 1.52,
+          "min": 1.52,
+          "max": 1.52,
+          "p95": 1.52,
+          "standard_deviation": 0.0
+        },
+        "synthesis_rtf": {
+          "mean": 5.4621605230263155,
+          "median": 5.4621605230263155,
+          "min": 5.260361825657895,
+          "max": 5.663959220394736,
+          "p95": 5.643779350657894,
+          "standard_deviation": 0.2853864546876447
+        },
+        "request_rtf": {
+          "mean": 5.483871102960526,
+          "median": 5.483871102960526,
+          "min": 5.284194078947368,
+          "max": 5.683548126973684,
+          "p95": 5.663580424572368,
+          "standard_deviation": 0.28238595545370626
+        }
+      }
+    }
+  ]
+}

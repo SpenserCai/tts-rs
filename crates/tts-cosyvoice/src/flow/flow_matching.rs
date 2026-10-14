@@ -104,6 +104,9 @@ impl CausalConditionalCFM {
         cond: &Tensor,
         streaming: bool,
     ) -> Result<Tensor> {
+        if n_timesteps == 0 {
+            candle::bail!("flow matching requires at least one Euler step");
+        }
         let (batch, _, seq_len) = mu.dims3()?;
         let device = mu.device();
         let dtype = mu.dtype();
@@ -377,7 +380,9 @@ impl CausalMaskedDiffWithDiT {
         // Calculate mel lengths
         let prompt_mel_len = prompt_feat.dim(1)?; // mel_len1 in Python
         let mel_len = mu.dim(2)?; // total mel length
-        let gen_mel_len = mel_len - prompt_mel_len; // mel_len2 in Python
+        let gen_mel_len = mel_len.checked_sub(prompt_mel_len).ok_or_else(|| {
+            candle::Error::Msg("prompt mel exceeds the token-aligned mel length".into())
+        })?;
 
         // 5. Prepare mask and condition
         let mask = Tensor::ones((batch, 1, mel_len), mu.dtype(), mu.device())?;

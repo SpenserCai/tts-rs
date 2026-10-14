@@ -87,7 +87,9 @@ impl HiFTiSTFT {
     pub fn forward(&self, magnitude: &Tensor, phase: &Tensor) -> Result<Tensor> {
         let (batch, freq_bins, n_frames) = magnitude.dims3()?;
         if freq_bins != self.n_fft / 2 + 1 || phase.dims() != magnitude.dims() || n_frames == 0 {
-            candle::bail!("iSTFT requires matching nonempty [batch, 9, frames] magnitude and phase");
+            candle::bail!(
+                "iSTFT requires matching nonempty [batch, 9, frames] magnitude and phase"
+            );
         }
 
         let original_device = magnitude.device().clone();

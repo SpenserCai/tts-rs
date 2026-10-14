@@ -8,7 +8,7 @@ mod voice_clone;
 pub use options::SynthesisOptions;
 pub use streaming::StreamingSession;
 
-use crate::{audio, generation, models, tokenizer};
+use crate::{audio, generation, tokenizer};
 use anyhow::Result;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use serde::Serialize;
@@ -89,6 +89,17 @@ pub struct Qwen3TTS {
     compute_dtype: DType,
 }
 
+impl Qwen3TTS {
+    fn generation_caches(&self, steps: usize, prefix_lengths: &[usize]) -> Result<Vec<AnyKVCache>> {
+        let capacity = prefix_lengths.iter().try_fold(steps, |total, &length| {
+            total
+                .checked_add(length)
+                .ok_or_else(|| anyhow::anyhow!("generation context length overflow"))
+        })?;
+        self.talker.new_kv_caches(capacity)
+    }
+}
+
 /// Convert a slice of codec frames into a tensor of shape `[1, 16, T]`.
 ///
 /// Each frame must contain exactly 16 codebook values. The output layout is
@@ -167,9 +178,13 @@ pub const SAMPLES_PER_FRAME: usize = 1920;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```no_run
+/// use tts_qwen::Qwen3TTS;
+/// # fn main() -> anyhow::Result<()> {
 /// let device = tts_qwen::auto_device()?;
-/// let model = Qwen3TTS::from_pretrained("path/to/model", device)?;
+/// let _model = Qwen3TTS::from_pretrained("path/to/model", device)?;
+/// # Ok(())
+/// # }
 /// ```
 pub fn auto_device() -> Result<Device> {
     #[cfg(feature = "cuda")]

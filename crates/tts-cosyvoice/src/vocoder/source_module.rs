@@ -159,12 +159,12 @@ impl SineGen2 {
         // Downsample rad_values for efficient cumsum
         // [B, T, H] -> [B, H, T] for interpolation, then back
         let rad_values_transposed = rad_values.transpose(1, 2)?; // [B, H, T]
-        let downsampled_len = time.div_ceil(self.upsample_scale);
+        let downsampled_len = time / self.upsample_scale;
         let rad_values_down = self.downsample_linear(&rad_values_transposed, downsampled_len)?;
         let rad_values_down = rad_values_down.transpose(1, 2)?; // [B, T_down, H]
 
         // Compute cumsum on the smaller tensor (this is the expensive operation)
-        let phase_down = (rad_values_down.cumsum(1)? * (2.0 * PI))?;
+        let phase_down = ((rad_values_down.cumsum(1)? * 2.0)? * PI)?;
 
         // Upsample phase back to original length
         // Multiply by upsample_scale to maintain correct phase progression
@@ -211,38 +211,29 @@ impl SineGen2 {
         Ok((sine_waves, uv, noise))
     }
 
-    /// Downsample using linear interpolation (simplified average pooling)
+    /// PyTorch linear interpolation with `align_corners=false`.
     /// Input: [B, C, T], Output: [B, C, T_out]
     fn downsample_linear(&self, x: &Tensor, target_len: usize) -> Result<Tensor> {
-        let (batch, channels, time) = x.dims3()?;
-
-        if time <= target_len {
-            // No downsampling needed
-            return Ok(x.clone());
+        let x = x.contiguous()?;
+        let (_, _, time) = x.dims3()?;
+        if target_len == 0 || self.upsample_scale == 0 {
+            candle::bail!("source interpolation requires a nonempty output");
         }
-
-        // Simple average pooling approach
-        let scale = self.upsample_scale;
-        let mut result_slices = Vec::new();
-
-        for i in 0..target_len {
-            let start = i * scale;
-            let end = ((i + 1) * scale).min(time);
-            let len = end - start;
-
-            if len > 0 {
-                let slice = x.narrow(2, start, len)?;
-                let avg = slice.mean(2)?; // [B, C]
-                result_slices.push(avg.unsqueeze(2)?); // [B, C, 1]
-            }
-        }
-
-        if result_slices.is_empty() {
-            // Edge case: return zeros
-            Tensor::zeros((batch, channels, target_len), x.dtype(), x.device())
-        } else {
-            Tensor::cat(&result_slices, 2)
-        }
+        let positions: Vec<f64> = (0..target_len)
+            .map(|i| (i as f64 + 0.5) * self.upsample_scale as f64 - 0.5)
+            .collect();
+        let left: Vec<u32> = positions.iter().map(|p| p.floor() as u32).collect();
+        let right: Vec<u32> = left.iter().map(|i| (*i + 1).min(time as u32 - 1)).collect();
+        let weights: Vec<f32> = positions.iter().map(|p| (p - p.floor()) as f32).collect();
+        let left = Tensor::from_vec(left, target_len, x.device())?;
+        let right = Tensor::from_vec(right, target_len, x.device())?;
+        let weights =
+            Tensor::from_vec(weights, (1, 1, target_len), x.device())?.to_dtype(x.dtype())?;
+        let a = x
+            .index_select(&left, 2)?
+            .broadcast_mul(&(1.0 - &weights)?)?;
+        let b = x.index_select(&right, 2)?.broadcast_mul(&weights)?;
+        a + b
     }
 
     /// Nearest neighbor upsampling for 1D: [B, C, T] -> [B, C, T_out]
@@ -430,16 +421,12 @@ mod tests {
         let device = Device::Cpu;
 
         // Test manual upsample via SineGen2's method
-        let _sine_gen = SineGen2::new(24000, 4, 8, 0.1, 0.003, &device)?;
+        let sine_gen = SineGen2::new(24000, 4, 8, 0.1, 0.003, &device)?;
 
         // Create test tensor [B, C, T] format
         let x = Tensor::from_slice(&[1.0f32, 2.0, 3.0], (1, 1, 3), &device)?;
 
-        // Use index_select for upsampling (same as our manual implementation)
-        let target_len = 12;
-        let indices: Vec<u32> = (0..target_len).map(|i| (i / 4) as u32).collect();
-        let indices = Tensor::from_vec(indices, target_len, &device)?;
-        let y = x.index_select(&indices, 2)?;
+        let y = sine_gen.upsample_nearest_1d(&x, 12)?;
 
         assert_eq!(y.dims(), &[1, 1, 12]); // 3 * 4 = 12
 
@@ -448,6 +435,12 @@ mod tests {
             y_vec,
             vec![1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]
         );
+
+        // torch.interpolate(mode="linear", scale_factor=0.25) samples the
+        // two center values; an impulse at an interval boundary contributes zero.
+        let impulse = Tensor::from_slice(&[10f32, 0., 0., 0., 0., 4., 8., 0.], (1, 1, 8), &device)?;
+        let down = sine_gen.downsample_linear(&impulse, 2)?;
+        assert_eq!(down.flatten_all()?.to_vec1::<f32>()?, [0., 6.]);
 
         Ok(())
     }

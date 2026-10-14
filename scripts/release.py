@@ -17,6 +17,8 @@ import tarfile
 import tempfile
 import tomllib
 
+from package_licenses import stage
+
 ROOT = Path(__file__).resolve().parents[1]
 NODE = ROOT / "bindings/node"
 EXCLUDED = ("tts-python", "tts-node", "tts-wasm")
@@ -38,6 +40,13 @@ def preflight(tag: str, publish: bool) -> None:
     version = manifest["workspace"]["package"]["version"]
     if tag != f"v{version}" or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?", tag):
         raise SystemExit(f"Tag must equal the workspace version: v{version}")
+    for member in manifest["workspace"]["members"]:
+        for path in ROOT.glob(f"{member}/Cargo.toml"):
+            package = tomllib.loads(path.read_text(encoding="utf-8"))["package"]
+            declared = package["version"]
+            package_version = version if declared == {"workspace": True} else declared
+            if package_version != version:
+                raise SystemExit(f"Rust package {package['name']} must use the workspace version {version}")
     node_version = json.loads((NODE / "package.json").read_text(encoding="utf-8"))["version"]
     pyproject = tomllib.loads((ROOT / "bindings/python/pyproject.toml").read_text(encoding="utf-8"))
     python_version = pyproject["project"].get("version", version)
@@ -76,6 +85,7 @@ def collect_node(artifacts: Path, output: Path) -> None:
     for package in packages:
         if len(list(package.parent.glob("*.node"))) != 1:
             raise SystemExit(f"Missing or ambiguous native binary in {package.parent}")
+        stage("node", package.parent, npm=True)
         run("npm", "pack", "--ignore-scripts", "--pack-destination", str(output.resolve()), cwd=package.parent)
     # Ship binaries only in their platform packages, not redundantly in the root tarball.
     for binary in NODE.glob("*.node"):

@@ -16,12 +16,17 @@ flowchart TD
     C --> O["ONNX Runtime: reference frontend"]
     E --> A["tts-core: audio and contracts"]
     W["WASM / Worker"] --> A
+    W --> QS["Optional Qwen speaker encoder"]
+    QS --> T
 ```
 
 The browser package reports its actual capabilities. A native feature named
 `cuda` or `metal` does not describe browser GPU execution. Large model buffers,
 WASM's address space and copying across JavaScript boundaries require their own
 validation; successful target compilation alone is not a browser performance test.
+The WASM package exposes speaker extraction from explicit configuration and
+weight bytes. It does not instantiate the complete native `Engine` or expose
+full synthesis.
 
 ## Model-specific conditioning
 
@@ -70,6 +75,10 @@ CosyVoice's released CAMPPlus and speech tokenizer graphs execute through the
 optional native ONNX Runtime frontend, matching the upstream deployment boundary.
 The language model, flow and vocoder use Candle. The runtime is an explicit shared
 library dependency, not bundled implicitly into Python wheels or Node packages.
+Within HiFT, the small F0 predictor always runs on CPU in float64 to preserve the
+upstream inference precision, including when the other stages use CUDA or Metal.
+Its result returns to the selected model device. Account for this transfer when
+measuring accelerator performance.
 
 ## Extension rule
 

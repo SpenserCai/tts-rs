@@ -70,9 +70,8 @@ impl Qwen3TTS {
         sync_device(&self.device)?;
         let t_prefill = Instant::now();
 
-        let mut kv_caches = self
-            .talker
-            .new_kv_caches(gen_config.max_new_tokens + input_ids.len() + 16);
+        let mut kv_caches =
+            self.generation_caches(gen_config.max_new_tokens, &[input_ids.len(), 16])?;
         let (hidden, logits) =
             self.talker
                 .prefill_custom_voice(&input_ids, speaker, language, &mut kv_caches)?;
@@ -309,9 +308,10 @@ impl Qwen3TTS {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// use tts_qwen::{Qwen3TTS, Speaker, Language, SynthesisOptions};
-    ///
+    /// ```no_run
+    /// use tts_qwen::{Qwen3TTS, Speaker, Language};
+    /// # fn main() -> anyhow::Result<()> {
+    /// let model = Qwen3TTS::from_pretrained("path/to/custom-voice", candle_core::Device::Cpu)?;
     /// let audio = model.synthesize_with_voice(
     ///     "Hello, world!",
     ///     Speaker::Ryan,
@@ -319,6 +319,8 @@ impl Qwen3TTS {
     ///     None,
     /// )?;
     /// audio.save("output.wav")?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn synthesize_with_voice(
         &self,
@@ -359,9 +361,8 @@ impl Qwen3TTS {
 
         // Prefill with CustomVoice format
 
-        let mut kv_caches = self
-            .talker
-            .new_kv_caches(gen_config.max_new_tokens + input_ids.len() + 16);
+        let mut kv_caches =
+            self.generation_caches(gen_config.max_new_tokens, &[input_ids.len(), 16])?;
         let (hidden, logits) =
             self.talker
                 .prefill_custom_voice(&input_ids, speaker, language, &mut kv_caches)?;
@@ -431,9 +432,10 @@ impl Qwen3TTS {
 
         // Prefill with VoiceDesign format
 
-        let mut kv_caches = self
-            .talker
-            .new_kv_caches(gen_config.max_new_tokens + input_ids.len() + instruct_ids.len() + 16);
+        let mut kv_caches = self.generation_caches(
+            gen_config.max_new_tokens,
+            &[input_ids.len(), instruct_ids.len(), 16],
+        )?;
         let (hidden, logits) = self.talker.prefill_voice_design(
             &input_ids,
             &instruct_ids,

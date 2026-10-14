@@ -15,3 +15,8 @@ Qwen speaker fixtures contain `[batch, mel_channels, time]` input `mel` and
 same input for the official Python module's `[batch, time, mel_channels]` API.
 It serializes actual weights and input values; shared RNG seeds are not used as
 a cross-framework equivalence guarantee.
+
+[`validation-baseline.json`](validation-baseline.json) records observed CPU
+results, their exact scope and source/weight provenance. It contains scalar
+metrics only, not audio, model weights or speaker vectors. It is historical
+evidence; rerun the evaluation scripts to validate a changed implementation.

@@ -33,6 +33,10 @@ def run(manifest_path: Path, output: Path, expected_device: str = "cpu") -> dict
         if sha256(path) != item["sha256"]:
             raise ValueError(f"Input hash mismatch: {path}")
     output.mkdir(parents=True, exist_ok=True)
+    for sidecar in manifest.get("sidecars", []):
+        for implementation in ["reference", "candidate"]:
+            if Path(sidecar[implementation]).exists():
+                raise ValueError("Refuse stale E2E sidecar; choose a fresh output directory")
     results = {}
     for implementation in ["reference", "candidate"]:
         command = manifest[implementation]["command"]
@@ -59,6 +63,12 @@ def run(manifest_path: Path, output: Path, expected_device: str = "cpu") -> dict
     report.update(environment=environment(), manifest_sha256=sha256(manifest_path),
                   source_revision=manifest["source_revision"], sample_rate=results["reference"][1],
                   scope="strict numerical end-to-end waveform comparison")
+    report["sidecars"] = {}
+    for sidecar in manifest.get("sidecars", []):
+        sidecar_report = compare(Path(sidecar["reference"]), Path(sidecar["candidate"]),
+                                 float(manifest["atol"]), float(manifest["rtol"]))
+        report["sidecars"][sidecar["name"]] = sidecar_report
+        report["passed"] = report["passed"] and sidecar_report["passed"]
     write_json(output / "e2e.json", report)
     return report
 

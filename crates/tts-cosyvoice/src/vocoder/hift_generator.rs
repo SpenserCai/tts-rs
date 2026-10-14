@@ -233,20 +233,38 @@ impl CausalHiFTGenerator {
     }
 
     pub fn new(config: HiFTConfig, vb: VarBuilder) -> Result<Self> {
+        let stages = config.upsample_rates.len();
+        if stages == 0
+            || stages > 8
+            || config.base_channels < (1 << stages)
+            || config.upsample_kernel_sizes.len() != stages
+            || config.source_resblock_kernel_sizes.len() != stages
+            || config.source_resblock_dilation_sizes.len() != stages
+            || config.resblock_kernel_sizes.is_empty()
+            || config.resblock_kernel_sizes.len() != config.resblock_dilation_sizes.len()
+            || config.upsample_rates.contains(&0)
+            || config.upsample_kernel_sizes.contains(&0)
+            || config.resblock_kernel_sizes.contains(&0)
+            || config.source_resblock_kernel_sizes.contains(&0)
+            || config
+                .resblock_dilation_sizes
+                .iter()
+                .chain(&config.source_resblock_dilation_sizes)
+                .any(|dilations| dilations.is_empty() || dilations.contains(&0))
+            || config.istft_n_fft != 16
+            || config.istft_hop_len != 4
+            || config.sampling_rate != 24000
+        {
+            candle::bail!("invalid or unsupported CosyVoice HiFT architecture");
+        }
         // Calculate total upsampling ratio (including iSTFT hop length)
         let upsample_scale: usize =
             config.upsample_rates.iter().product::<usize>() * config.istft_hop_len;
 
-        // F0 Predictor
-        // NOTE: The official Python implementation moves F0 predictor to CPU for precision:
-        // "NOTE f0_predictor precision is crucial for causal inference, move self.f0_predictor to cpu if necessary"
-        // See: refs/CosyVoice/cosyvoice/hifigan/generator.py line 715-717
-        //
-        // However, in Candle, moving weights to a different device after loading is complex.
-        // For now, we keep force_cpu=false but ensure F32 precision is used in the forward pass.
-        // TODO: Implement proper CPU fallback by loading F0 predictor weights on CPU device.
+        // The official inference path computes F0 in float64. Keep this small
+        // precision-sensitive predictor on CPU, including for Metal/CUDA models.
         let f0_predictor =
-            CausalConvRNNF0Predictor::new(config.in_channels, 512, false, vb.pp("f0_predictor"))?;
+            CausalConvRNNF0Predictor::new(config.in_channels, 512, true, vb.pp("f0_predictor"))?;
 
         // Source Module
         let m_source = SourceModuleHnNSF::new(
@@ -397,7 +415,9 @@ impl CausalHiFTGenerator {
         }
 
         // Conv Post - CausalConv1d with causal_type='left'
-        let final_ch = *channel_sizes.last().unwrap();
+        let final_ch = *channel_sizes
+            .last()
+            .ok_or_else(|| candle::Error::Msg("vocoder needs at least one channel stage".into()))?;
         let post_out_ch = (config.istft_n_fft / 2 + 1) * 2; // 18
         let conv_post = CausalConv1d::new(
             final_ch,
@@ -521,7 +541,9 @@ impl CausalHiFTGenerator {
                     Some(acc) => (acc + xj)?,
                 });
             }
-            x = (xs.unwrap() / self.resblocks[i].len() as f64)?;
+            let residual = xs
+                .ok_or_else(|| candle::Error::Msg("vocoder stage has no residual blocks".into()))?;
+            x = (residual / self.resblocks[i].len() as f64)?;
         }
 
         // 7. Post-processing
@@ -532,14 +554,10 @@ impl CausalHiFTGenerator {
         x = self.conv_post.forward(&x)?;
 
         // 8. Separate magnitude and phase
-        // Clip the log-magnitude to prevent exp() explosion
-        // Python clips magnitude after exp() to 100, which corresponds to log(100) ≈ 4.6
-        // We clip to a slightly higher value to allow some headroom
         let n_fft_half = self.config.istft_n_fft / 2 + 1;
-        let log_magnitude = x.narrow(1, 0, n_fft_half)?.clamp(-10.0, 5.0)?;
+        let log_magnitude = x.narrow(1, 0, n_fft_half)?;
         let magnitude = log_magnitude.exp()?;
         let phase = x.narrow(1, n_fft_half, n_fft_half)?;
-        // Note: In original implementation phase goes through sin, simplified here
         let phase = phase.sin()?;
 
         // 9. iSTFT

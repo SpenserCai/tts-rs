@@ -12,17 +12,17 @@ use std::path::Path;
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// // From synthesis
-/// let audio = model.synthesize("Hello!", None)?;
-/// audio.save("output.wav")?;
-///
-/// // From file
+/// ```no_run
+/// use tts_qwen::AudioBuffer;
+/// # fn main() -> anyhow::Result<()> {
 /// let audio = AudioBuffer::load("input.wav")?;
 /// println!("Duration: {:.2}s", audio.duration());
+/// audio.save("output.wav")?;
 ///
 /// // Convert to tensor for processing
-/// let tensor = audio.to_tensor(&device)?;
+/// let _tensor = audio.to_tensor(&candle_core::Device::Cpu)?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct AudioBuffer {

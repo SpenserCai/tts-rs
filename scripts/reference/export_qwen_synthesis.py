@@ -79,6 +79,9 @@ def main() -> None:
         "text_sha256": __import__("hashlib").sha256(args.text.encode()).hexdigest(),
     }
     write_json(args.output, tensor_document(tensors, metadata))
+    if prompt[0].ref_code is not None:
+        write_json(args.output.with_name(args.output.stem + "-reference-codes.json"),
+                   tensor_document({"reference_audio_codes": prompt[0].ref_code.to(torch.uint32)}, metadata))
     sf.write(args.output.with_suffix(".wav"), wavs[0], sample_rate, subtype="PCM_16")
     print(f"Official synthesis produced {len(wavs[0])} samples at {sample_rate} Hz")
 

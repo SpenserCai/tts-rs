@@ -3,6 +3,7 @@
 *.pyc
 /.venv/
 /.reference/
+/.cache/
 /models/
 /artifacts/
 /dist/

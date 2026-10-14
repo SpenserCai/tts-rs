@@ -83,9 +83,19 @@ impl HiFTSTFT {
         let original_dtype = x.dtype();
         let (_batch, samples) = x.dims2()?;
 
-        // Add center padding (n_fft // 2 on both sides) to match PyTorch's center=True
+        // torch.stft defaults to reflection padding when center=True.
         let pad_size = self.n_fft / 2;
-        let x = x.pad_with_zeros(1, pad_size, pad_size)?;
+        if samples <= pad_size {
+            candle::bail!("STFT reflection padding requires more than eight samples");
+        }
+        let indices: Vec<u32> = (1..=pad_size)
+            .rev()
+            .chain(0..samples)
+            .chain((samples - pad_size - 1..samples - 1).rev())
+            .map(|index| index as u32)
+            .collect();
+        let indices = Tensor::from_vec(indices, samples + 2 * pad_size, x.device())?;
+        let x = x.index_select(&indices, 1)?;
         let padded_samples = samples + 2 * pad_size;
 
         // Calculate number of frames

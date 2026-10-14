@@ -34,13 +34,18 @@ def fuse_weight_norm(state):
             direction_key = stem + ".weight_v"
         else:
             continue
-        direction = state[direction_key].float()
+        # Upstream promotes the *parametrized* F0 predictor to float64 at
+        # inference time, before materializing its normalized weights.
+        dtype = torch.float64 if stem.startswith("f0_predictor.") else torch.float32
+        direction = state[direction_key].to(dtype)
         norm = torch.linalg.vector_norm(
             direction, dim=tuple(range(1, direction.ndim)), keepdim=True
         )
         if torch.any(norm == 0):
             raise ValueError(f"zero weight-norm direction: {direction_key}")
-        converted[stem + ".weight"] = (gain.float() * direction / norm).contiguous()
+        # This is the primitive used by PyTorch's weight_norm parametrization;
+        # preserving its operation order avoids amplified waveform differences.
+        converted[stem + ".weight"] = torch._weight_norm(direction, gain.to(dtype), 0).contiguous()
         consumed.update((key, direction_key))
     for key, value in state.items():
         if key not in consumed:
@@ -63,8 +68,16 @@ def convert(args):
     if revision != UPSTREAM_REVISION:
         raise ValueError(f"expected upstream {UPSTREAM_REVISION}, found {revision}")
     args.output.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.output / "conversion.json"
     manifest = {"schema_version": 1, "upstream_revision": revision, "files": {}}
-    for stage in ("llm", "flow", "hift"):
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (manifest.get("schema_version") != 1
+                or manifest.get("upstream_revision") != revision
+                or not isinstance(manifest.get("files"), dict)):
+            raise ValueError("existing conversion manifest has an incompatible schema or source revision")
+    stages = tuple(dict.fromkeys(args.stages))
+    for stage in stages:
         source_path = args.input / f"{stage}.pt"
         state = torch.load(source_path, map_location="cpu", weights_only=True)
         if not isinstance(state, dict) or not all(isinstance(v, torch.Tensor) for v in state.values()):
@@ -94,25 +107,28 @@ def convert(args):
         del state, converted
 
     # The Python model creates this nonpersistent tensor after resetting seed=0.
-    generator = torch.Generator(device="cpu").manual_seed(0)
-    save_file({"noise": torch.randn(1, 80, 15000, generator=generator)},
-              str(args.output / "flow-noise.safetensors"))
+    if "flow" in stages:
+        generator = torch.Generator(device="cpu").manual_seed(0)
+        save_file({"noise": torch.randn(1, 80, 15000, generator=generator)},
+                  str(args.output / "flow-noise.safetensors"))
 
     # Import the versioned upstream tokenizer so every phoneme/control token and
     # Qwen pre-tokenization rule is preserved. Bare vocab/merges are insufficient.
-    sys.path.insert(0, str(source))
-    from cosyvoice.tokenizer.tokenizer import CosyVoice3Tokenizer
+    if "llm" in stages:
+        sys.path.insert(0, str(source))
+        from cosyvoice.tokenizer.tokenizer import CosyVoice3Tokenizer
 
-    tokenizer = CosyVoice3Tokenizer(str(args.input / "CosyVoice-BlankEN")).tokenizer
-    if not tokenizer.is_fast:
-        raise RuntimeError("a fast upstream tokenizer is required for tokenizer.json export")
-    if tokenizer.convert_tokens_to_ids("<|endofprompt|>") != 151646:
-        raise ValueError("unexpected CosyVoice 3 special-token mapping")
-    tokenizer.backend_tokenizer.save(str(args.output / "tokenizer.json"))
-    for name in ("campplus.onnx", "speech_tokenizer_v3.onnx"):
-        if (args.input / name).is_file():
-            shutil.copyfile(args.input / name, args.output / name)
-    (args.output / "conversion.json").write_text(
+        tokenizer = CosyVoice3Tokenizer(str(args.input / "CosyVoice-BlankEN")).tokenizer
+        if not tokenizer.is_fast:
+            raise RuntimeError("a fast upstream tokenizer is required for tokenizer.json export")
+        if tokenizer.convert_tokens_to_ids("<|endofprompt|>") != 151646:
+            raise ValueError("unexpected CosyVoice 3 special-token mapping")
+        tokenizer.backend_tokenizer.save(str(args.output / "tokenizer.json"))
+    if set(stages) == {"llm", "flow", "hift"}:
+        for name in ("campplus.onnx", "speech_tokenizer_v3.onnx"):
+            if (args.input / name).is_file():
+                shutil.copyfile(args.input / name, args.output / name)
+    manifest_path.write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
     )
 
@@ -127,6 +143,9 @@ def main():
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--source", required=True, type=Path)
+    parser.add_argument("--stages", nargs="+", choices=("llm", "flow", "hift"),
+                        default=("llm", "flow", "hift"),
+                        help="convert only the requested stages; default: all three")
     args = parser.parse_args()
     convert(args)
 

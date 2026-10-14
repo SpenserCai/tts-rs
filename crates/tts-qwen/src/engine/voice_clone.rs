@@ -14,14 +14,43 @@ impl Qwen3TTS {
         language: Language,
         options: Option<SynthesisOptions>,
     ) -> Result<(AudioBuffer, FrameCodes)> {
+        self.voice_clone_run(text, prompt, language, options, false)
+            .map(|(audio, codes, _)| (audio, codes))
+    }
+
+    /// Synthesize a voice-clone prompt with synchronized stage timings.
+    ///
+    /// Prefill includes text tokenization and cache setup. Generation covers
+    /// autoregressive codec prediction; decode includes reference-context trimming.
+    /// Model loading and reference feature extraction are separate operations.
+    pub fn synthesize_voice_clone_with_timing(
+        &self,
+        text: &str,
+        prompt: &VoiceClonePrompt,
+        language: Language,
+        options: Option<SynthesisOptions>,
+    ) -> Result<(AudioBuffer, SynthesisTiming)> {
+        self.voice_clone_run(text, prompt, language, options, true)
+            .map(|(audio, _, timing)| (audio, timing))
+    }
+
+    fn voice_clone_run(
+        &self,
+        text: &str,
+        prompt: &VoiceClonePrompt,
+        language: Language,
+        options: Option<SynthesisOptions>,
+        timed: bool,
+    ) -> Result<(AudioBuffer, FrameCodes, SynthesisTiming)> {
         let options = options.unwrap_or_default();
         options.validate()?;
+        if timed {
+            sync_device(&self.device)?;
+        }
+        let prefill_started = Instant::now();
         let mut sampling_ctx = generation::SamplingContext::new(options.seed);
         anyhow::ensure!(!text.trim().is_empty(), "target text must not be empty");
         let input_ids = self.text_tokenizer.encode(text)?;
-
-        // Determine if ICL mode is active (ref_codes + ref_text present)
-        let is_icl = prompt.ref_codes.is_some() && prompt.ref_text_ids.is_some();
 
         let gen_config = options.to_gen_config();
 
@@ -45,71 +74,41 @@ impl Qwen3TTS {
             .checked_add(icl_len)
             .and_then(|n| n.checked_add(16))
             .ok_or_else(|| anyhow::anyhow!("KV cache length overflow"))?;
-        let mut kv_caches = self.talker.new_kv_caches(capacity);
-        let (hidden, logits) = self.talker.prefill_voice_clone(
-            &input_ids,
-            &speaker_embed,
-            language,
-            is_icl,
-            &mut kv_caches,
-        )?;
-        let prefill_len = hidden.dim(1)?;
-        let mut offset = prefill_len;
-
-        // Initialize last_hidden from prefill; updated by ICL block if active.
-        let mut last_hidden = hidden.i((.., prefill_len - 1..prefill_len, ..))?;
-
-        // ICL extension (if reference codes + text are provided)
-        let (trailing_text_hidden, logits) = if let (Some(ref_codes), Some(ref_text_ids)) =
+        let mut kv_caches = self.talker.new_kv_caches(capacity)?;
+        let (hidden, logits, trailing_text_hidden) = if let (Some(ref_codes), Some(ref_text_ids)) =
             (&prompt.ref_codes, &prompt.ref_text_ids)
         {
             let ref_codec_embeds = self.sum_ref_codec_embeddings(ref_codes)?;
-
-            // In ICL mode, all text tokens go into the ICL prompt (Python:
-            // text_id=input_id[:, 3:-5] passes ALL target text tokens).
-            // In the non-ICL path the first text token is consumed by the prefill,
-            // so only the remaining tokens go to trailing_text.
-            let (icl_embed, icl_trailing) =
-                self.talker
-                    .build_icl_prompt(&input_ids, ref_text_ids, &ref_codec_embeds, false)?;
-
-            let icl_len = icl_embed.dim(1)?;
-            if icl_len > 0 {
-                let mask = models::transformer::create_causal_mask(icl_len, offset, &self.device)?;
-
-                let mut icl_hidden = icl_embed;
-                for (i, layer) in self.talker.layers_iter().enumerate() {
-                    icl_hidden = layer.forward(
-                        &icl_hidden,
-                        self.talker.rope(),
-                        Some(&mask),
-                        Some(&mut kv_caches[i]),
-                        offset,
-                    )?;
-                }
-                icl_hidden = self.talker.apply_norm(&icl_hidden)?;
-                offset += icl_len;
-
-                let last_icl_hidden = icl_hidden.i((.., icl_len - 1..icl_len, ..))?;
-                let new_logits = self.talker.apply_codec_head(&last_icl_hidden)?;
-
-                // Update last_hidden so the code predictor is conditioned on
-                // the ICL context, not the stale prefill hidden state.
-                last_hidden = last_icl_hidden;
-
-                (icl_trailing, new_logits)
-            } else {
-                let trailing = self.build_default_trailing_text(&input_ids)?;
-                (trailing, logits)
-            }
+            self.talker.prefill_voice_clone_icl(
+                &input_ids,
+                &speaker_embed,
+                language,
+                ref_text_ids,
+                &ref_codec_embeds,
+                &mut kv_caches,
+            )?
         } else {
+            let (hidden, logits) = self.talker.prefill_voice_clone(
+                &input_ids,
+                &speaker_embed,
+                language,
+                false,
+                &mut kv_caches,
+            )?;
             let trailing = self.build_default_trailing_text(&input_ids)?;
-            (trailing, logits)
+            (hidden, logits, trailing)
         };
+        let offset = hidden.dim(1)?;
+        let last_hidden = hidden.i((.., offset - 1..offset, ..))?;
 
         let trailing_text_len = trailing_text_hidden.dim(1)?;
         let tts_pad_embed = self.talker.get_tts_pad_embed()?;
 
+        if timed {
+            sync_device(&self.device)?;
+        }
+        let prefill_ms = prefill_started.elapsed().as_secs_f64() * 1000.0;
+        let generation_started = Instant::now();
         let all_codes = self.generate_codes(
             &gen_config,
             &mut sampling_ctx,
@@ -122,6 +121,11 @@ impl Qwen3TTS {
             &tts_pad_embed,
         )?;
 
+        if timed {
+            sync_device(&self.device)?;
+        }
+        let generation_ms = generation_started.elapsed().as_secs_f64() * 1000.0;
+        let decode_started = Instant::now();
         // Prepend ref_codes for ICL decoder context (same fix as synthesize_voice_clone)
 
         let audio = if let Some(ref_codes) = &prompt.ref_codes {
@@ -147,7 +151,16 @@ impl Qwen3TTS {
         } else {
             self.decode_codes(&all_codes)?
         };
-        Ok((audio, all_codes))
+        if timed {
+            sync_device(&self.device)?;
+        }
+        let timing = SynthesisTiming {
+            prefill_ms,
+            generation_ms,
+            generation_frames: all_codes.len(),
+            decode_ms: decode_started.elapsed().as_secs_f64() * 1000.0,
+        };
+        Ok((audio, all_codes, timing))
     }
 
     // ── Voice cloning API ─────────────────────────────────────────────────

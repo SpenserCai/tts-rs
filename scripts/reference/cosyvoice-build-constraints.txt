@@ -1,0 +1,3 @@
+# Upstream Whisper 20231117 imports pkg_resources while building its wheel.
+# Newer setuptools removes that API; constrain the isolated build environment.
+setuptools==75.8.0

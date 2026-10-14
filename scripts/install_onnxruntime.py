@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Explicitly install and verify the pinned external CPU runtime for CosyVoice's frontend.
 
-This developer/CI utility is never invoked by package import or a build script.
+This Python 3.12+ developer/CI utility is never invoked by package import or a build script.
 The archive remains separate from Python wheels and Node packages.
 """
 
@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import sys
 import tarfile
 import urllib.request
 import zipfile
@@ -113,6 +114,8 @@ def install(destination: Path) -> dict[str, object]:
 
 
 def main() -> None:
+    if sys.version_info < (3, 12):
+        raise SystemExit("This repository setup utility requires Python 3.12 or newer")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path(".cache/onnxruntime"))
     parser.add_argument("--github-env", action="store_true", help="Export path to later Actions steps")

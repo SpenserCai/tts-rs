@@ -24,6 +24,12 @@ The repository is named **tts-rs**. The Rust package is **candle-tts**, because 
 implementation; consult the validation evidence before selecting a deployment.
 No model weights or voice recordings are included.
 
+Measured CPU comparisons are recorded in the
+[validation baseline](tests/fixtures/validation-baseline.json), with the exact
+scope, upstream revision, tolerances and errors. Component checks, full synthesis
+checks and voice quality are distinct; the support table below states which
+platforms have actually been exercised.
+
 ## What belongs where
 
 | Package | Responsibility |
@@ -46,7 +52,7 @@ Until a registry release is published, use the repository dependency:
 
 ```toml
 [dependencies]
-candle-tts = { git = "https://github.com/SpenserCai/tts-rs" }
+candle-tts = { git = "https://github.com/SpenserCai/tts-rs", branch = "feat/modular-candle-tts" }
 ```
 
 ```rust,no_run
@@ -128,7 +134,7 @@ extracting reference conditioning; the Candle synthesis models remain native Rus
 | --- | --- |
 | Manual CI | Cheap Linux gate, optional Windows x64 / Linux x64 / macOS ARM matrix |
 | Benchmark | Criterion audio benchmarks and machine metadata |
-| Model evaluation | Scoped tensor parity, Qwen CPU waveform E2E, component timings; explicit manifests for other E2E paths |
+| Model evaluation | Tensor parity, Qwen CPU waveform E2E, component timings and opt-in resident Qwen TTS benchmark |
 | Release | Build and test artifacts; dry run by default; opt-in draft or registry publish |
 
 Every workflow uses `workflow_dispatch`. Heavy model jobs and accelerator runners

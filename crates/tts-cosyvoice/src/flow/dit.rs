@@ -33,7 +33,8 @@ impl FeedForward {
 impl Module for FeedForward {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
         let x = self.linear1.forward(x)?;
-        let x = x.gelu_erf()?; // GELU activation
+        // Official DiTBlock explicitly selects approximate="tanh".
+        let x = x.gelu()?;
         self.linear2.forward(&x)
     }
 }
@@ -104,9 +105,20 @@ impl Attention {
         // Apply mask if provided
         let attn_weights = match mask {
             Some(m) => {
-                let mask = m.unsqueeze(1)?; // [B, 1, T, T]
-                let neg_inf = Tensor::new(f32::NEG_INFINITY, attn_weights.device())?;
-                attn_weights.where_cond(&mask.broadcast_as(attn_weights.shape())?, &neg_inf)?
+                let mask = match m.rank() {
+                    2 => m.unsqueeze(0)?.unsqueeze(0)?,
+                    3 => m.unsqueeze(1)?,
+                    4 => m.clone(),
+                    _ => candle::bail!("attention mask requires rank 2, 3, or 4"),
+                }
+                .broadcast_as(attn_weights.shape())?;
+                let neg_inf = Tensor::full(
+                    f32::NEG_INFINITY,
+                    attn_weights.shape(),
+                    attn_weights.device(),
+                )?
+                .to_dtype(attn_weights.dtype())?;
+                mask.where_cond(&attn_weights, &neg_inf)?
             }
             None => attn_weights,
         };
@@ -323,6 +335,38 @@ impl DiT {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn causal_attention_excludes_future_for_cfg_batch() -> Result<()> {
+        let device = Device::Cpu;
+        let mut weights = std::collections::HashMap::new();
+        for name in ["to_q", "to_k", "to_v", "to_out.0"] {
+            weights.insert(
+                format!("{name}.weight"),
+                Tensor::eye(4, DType::F32, &device)?,
+            );
+            weights.insert(
+                format!("{name}.bias"),
+                Tensor::zeros(4, DType::F32, &device)?,
+            );
+        }
+        let attention = Attention::new(
+            4,
+            1,
+            4,
+            VarBuilder::from_tensors(weights, DType::F32, &device),
+        )?;
+        let x = Tensor::from_slice(&[1f32, 0., 0., 0., 0., 100., 0., 0.], (1, 2, 4), &device)?
+            .repeat((2, 1, 1))?;
+        let mask = Tensor::from_slice(&[1u8, 0, 1, 1], (2, 2), &device)?;
+        let rope = RotaryEmbedding::new(4, 10000.).forward(2, &device, DType::F32)?;
+        let output = attention.forward(&x, Some(&mask), &rope)?;
+        assert_eq!(output.dims(), [2, 2, 4]);
+        for batch in output.to_vec3::<f32>()? {
+            assert_eq!(batch[0], [1., 0., 0., 0.]);
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_feedforward_shape() -> Result<()> {

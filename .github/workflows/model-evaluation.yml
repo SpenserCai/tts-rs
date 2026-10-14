@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: Numerical parity, speech e2e, or model benchmark
+        description: Numerical parity, speech E2E, or explicitly scoped benchmark
         type: choice
         options: [parity, e2e, benchmark]
         default: parity
@@ -23,6 +23,16 @@ on:
         type: choice
         options: [synthetic, pretrained]
         default: synthetic
+      component:
+        description: CosyVoice pretrained CPU parity stage; leave all for other paths
+        type: choice
+        options: [all, hift, flow, llm]
+        default: all
+      benchmark_kind:
+        description: Component timings by default; tts downloads real Qwen weights for CPU synthesis
+        type: choice
+        options: [component, tts]
+        default: component
       e2e_manifest:
         description: Optional repository-relative manifest; Qwen CPU has an automatic fixture
         type: string
@@ -36,7 +46,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: evaluation-${{ github.ref }}-${{ inputs.model }}-${{ inputs.suite }}-${{ inputs.device }}
+  group: evaluation-${{ github.ref }}-${{ inputs.model }}-${{ inputs.suite }}-${{ inputs.device }}-${{ inputs.fixture_kind }}-${{ inputs.component }}-${{ inputs.benchmark_kind }}
   cancel-in-progress: true
 
 jobs:
@@ -51,6 +61,8 @@ jobs:
       TTS_MODEL: ${{ inputs.model }}
       TTS_DEVICE: ${{ inputs.device }}
       TTS_FIXTURE: ${{ inputs.fixture_kind }}
+      TTS_COMPONENT: ${{ inputs.component }}
+      TTS_BENCHMARK_KIND: ${{ inputs.benchmark_kind }}
       TTS_E2E_MANIFEST: ${{ inputs.e2e_manifest }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -62,15 +74,21 @@ jobs:
       - name: Validate the optional WASM evaluation combination
         if: inputs.wasm_speaker && (inputs.model != 'qwen' || inputs.device != 'cpu' || inputs.suite != 'parity' || inputs.fixture_kind != 'pretrained')
         run: python -c "raise SystemExit('WASM speaker evaluation requires qwen / cpu / parity / pretrained')"
+      - name: Validate an explicitly selected pretrained component
+        if: inputs.component != 'all' && (inputs.model != 'cosyvoice' || inputs.device != 'cpu' || inputs.suite != 'parity' || inputs.fixture_kind != 'pretrained')
+        run: python -c "raise SystemExit('A component selection requires cosyvoice / cpu / parity / pretrained')"
+      - name: Validate an explicitly selected full synthesis benchmark
+        if: inputs.benchmark_kind == 'tts' && (inputs.model != 'qwen' || inputs.device != 'cpu' || inputs.suite != 'benchmark')
+        run: python -c "raise SystemExit('Full synthesis benchmarking requires qwen / cpu / benchmark')"
       - run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: evaluation-${{ inputs.device }}
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: inputs.fixture_kind == 'pretrained' || inputs.suite == 'e2e'
+        if: inputs.fixture_kind == 'pretrained' || inputs.suite == 'e2e' || inputs.benchmark_kind == 'tts'
         with:
           path: .cache/huggingface
-          key: model-${{ inputs.model }}-${{ hashFiles('scripts/reference/**/*') }}
+          key: model-${{ inputs.model }}-${{ (inputs.suite == 'e2e' || inputs.benchmark_kind == 'tts') && 'full' || inputs.component }}-${{ hashFiles('scripts/reference/pins.json') }}
       - name: Install the explicit external CPU frontend runtime
         if: inputs.model == 'cosyvoice' && inputs.suite == 'e2e'
         run: python scripts/install_onnxruntime.py --output .cache/onnxruntime --github-env
@@ -85,6 +103,8 @@ jobs:
                      "--model", os.environ["TTS_MODEL"],
                      "--device", os.environ["TTS_DEVICE"],
                      "--fixture-kind", os.environ["TTS_FIXTURE"],
+                     "--component", os.environ["TTS_COMPONENT"],
+                     "--benchmark-kind", os.environ["TTS_BENCHMARK_KIND"],
                      "--prepare-env", "--output", "target/evaluation"]
           if os.environ["TTS_E2E_MANIFEST"]:
               command += ["--e2e-manifest", os.environ["TTS_E2E_MANIFEST"]]
@@ -94,12 +114,14 @@ jobs:
         if: inputs.wasm_speaker
         with:
           node-version: '24'
+      - name: Install the verified WASM build tool
+        if: inputs.wasm_speaker
+        run: python scripts/install_wasm_pack.py --github-path
       - name: Build the optional WASM Qwen speaker package
         if: inputs.wasm_speaker
         run: |
           rustup target add wasm32-unknown-unknown
-          cargo install wasm-pack --version 0.15.0 --locked
-          wasm-pack build bindings/wasm --target nodejs --out-dir pkg-qwen --features qwen --locked
+          wasm-pack build bindings/wasm --target nodejs --out-dir pkg-qwen --no-opt --features qwen --locked
       - name: Compare WASM to the same real-weight Python fixture
         if: inputs.wasm_speaker
         run: |

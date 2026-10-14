@@ -807,7 +807,13 @@ pub fn resample_sinc(
     lowpass_filter_width: usize,
     rolloff: f64,
 ) -> Result<Tensor> {
-    if from_sr == 0 || to_sr == 0 || lowpass_filter_width == 0 || !rolloff.is_finite() || !(0.0..=1.0).contains(&rolloff) || rolloff == 0.0 {
+    if from_sr == 0
+        || to_sr == 0
+        || lowpass_filter_width == 0
+        || !rolloff.is_finite()
+        || !(0.0..=1.0).contains(&rolloff)
+        || rolloff == 0.0
+    {
         candle::bail!("resampling rates, filter width, and rolloff must be positive and finite");
     }
     if from_sr == to_sr {

@@ -9,7 +9,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     ensure!(
         (5..=7).contains(&args.len()),
-        "usage: synthesis_oracle MODEL_DIR REFERENCE_WAV TEXT OUTPUT_JSON MAX_FRAMES [LANGUAGE] [REFERENCE_TEXT]"
+        "usage: synthesis_oracle MODEL_DIR REFERENCE_WAV TEXT OUTPUT_JSON MAX_NEW_TOKENS [LANGUAGE] [REFERENCE_TEXT]"
     );
     let start = Instant::now();
     let model = Qwen3TTS::from_pretrained(&args[0], Device::Cpu)?;
@@ -39,6 +39,23 @@ fn main() -> Result<()> {
     let inference_seconds = start.elapsed().as_secs_f64();
     let output = PathBuf::from(&args[3]);
     audio.save(output.with_extension("wav"))?;
+    if let Some(reference_codes) = &prompt.ref_codes {
+        let reference = json!({
+            "schema_version": 1,
+            "metadata": {"implementation": "tts-qwen", "device": "cpu"},
+            "tensors": {
+                "reference_audio_codes": {
+                    "shape": reference_codes.dims(),
+                    "dtype": "uint32",
+                    "data": reference_codes.to_dtype(DType::U32)?.flatten_all()?.to_vec1::<u32>()?
+                }
+            }
+        });
+        std::fs::write(
+            output.with_extension("reference-codes.json"),
+            serde_json::to_vec_pretty(&reference)?,
+        )?;
+    }
     let frames = codes.len();
     let result = json!({
         "schema_version": 1,

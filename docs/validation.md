@@ -25,6 +25,17 @@ for Windows x64 and macOS ARM; Linux success does not certify those platforms.
 checkpoint revisions. `prepare_env.py` checks out those revisions and rejects a
 dirty reference tree. It pins the core runtime dependencies and records the full
 resolved environment. It does not pretend that all transitive packages are locked.
+Each model family has its own virtual environment: Qwen uses Torch 2.10, while
+CosyVoice uses the upstream Torch/torchaudio 2.3.1 and Transformers 4.51.3
+contract. In particular, changing Transformers can change cached attention-mask
+behavior without changing any checkpoint tensor. A different runtime is a new
+oracle configuration and must be recorded and validated separately.
+
+On Linux, `scripts/reference/offline_exec.py -- COMMAND ...` runs an already
+prepared command with a libseccomp policy that denies socket creation and network
+transmission across child processes. It fails closed if that policy cannot be
+installed. Download dependencies and checkpoints beforehand; environment flags
+such as `HF_HUB_OFFLINE` alone do not enforce this boundary.
 
 ```sh
 python scripts/reference/run.py --suite parity --model qwen --device cpu \
@@ -32,10 +43,17 @@ python scripts/reference/run.py --suite parity --model qwen --device cpu \
 
 python scripts/reference/run.py --suite parity --model cosyvoice --device cpu \
   --prepare-env --fixture-kind synthetic --output artifacts/cosy-small
+
+python scripts/reference/run.py --suite e2e --model qwen --device cpu \
+  --prepare-env --output target/qwen-e2e
+
+python scripts/reference/run.py --suite parity --model cosyvoice --device cpu \
+  --prepare-env --fixture-kind pretrained --component hift --output target/cosy-hift
 ```
 
 The Qwen synthetic check runs the complete speaker encoder with small deterministic
-weights. The CosyVoice synthetic check covers DiT conditioning primitives; it is
+weights. The CosyVoice synthetic check covers DiT conditioning primitives and
+the official tanh-GELU feed-forward network; it is
 not a full-model test. Pretrained Qwen speaker testing can fetch only the speaker
 tensor ranges, avoiding a full speech model download. See `--help` on
 `download_speaker.py` and `export_qwen.py` for explicit paths and revisions.
@@ -44,6 +62,27 @@ For full-model checks, provide matching weights, tokenization, reference PCM,
 precision, and decoding settings. Use greedy decoding or exported shared random
 tensors. Equal seeds in Rust and PyTorch do not imply identical draws. CosyVoice
 also requires shared flow noise and vocoder noise for waveform comparisons.
+
+Automatic Qwen E2E runs two public numerical smoke cases in sequence: x-vector
+conditioning from an analytic tone, then ICL conditioned on that case's generated
+audio and known text. The ICL gate also compares every reference codec ID. A
+20-token cap bounds runtime; it is not an assertion of natural EOS or voice quality.
+
+Pretrained CosyVoice CPU stages are selected with `--component hift`, `flow`,
+`llm` or `all` in both `run.py` and the manual model-evaluation workflow. The
+default input is analytic, with no recording. Reuse reviewed public features
+with `--prompt-features`; reuse checkpoints with `--model-directory` and
+`--converted-model-directory`, and a checkout with `--cosyvoice-source`.
+Each stage executes official Python and Candle; shared randomness is serialized,
+not inferred from seed equality. Failed stages remain failures. Full chained
+CosyVoice E2E requires a reviewed manifest and separate evidence.
+
+The [observed validation baseline](../tests/fixtures/validation-baseline.json)
+contains public scalar metrics, pins and exact scopes. CPU Qwen speaker and full
+bounded x-vector/ICL outputs passed `atol=1e-5, rtol=1e-4`; both ICL reference and
+generated code sequences matched exactly (304 IDs each). Pretrained HiFT's 15,360
+sample waveform also passed, with maximum absolute error `7.853e-6`. These
+observations do not certify every intermediate tensor, input, language or device.
 
 ## Strict comparisons
 
@@ -77,6 +116,12 @@ utterance does not certify every language, model size, sampling mode or stream.
 cargo bench -p tts-core --bench audio
 python scripts/reference/run.py --suite benchmark --model qwen --device cpu \
   --prepare-env --output artifacts/speaker-benchmark
+
+python scripts/reference/benchmark_tts.py --model-dir /path/to/qwen-base \
+  --output target/tts-benchmark --warmups 1 --runs 3 --threads 1
+
+python scripts/reference/run.py --suite benchmark --model qwen --device cpu \
+  --benchmark-kind tts --prepare-env --runs 3 --output artifacts/tts-benchmark
 ```
 
 Criterion measures audio operations, not TTS real-time factor. Model evaluation
@@ -84,6 +129,11 @@ separates process/load overhead from synthesis where supported, records machine,
 runtime, source revision and device, and uses warm-up plus repeated runs. GPU
 timing requires synchronization. Report peak memory and output duration alongside
 latency/RTF; do not interpret shared CI runner timing as a stable performance gate.
+The observed resident CPU probe used one thread, one warmup and two measured
+runs on a shared AMD EPYC host. It generated 1.52 seconds per request, with a
+median request RTF of 5.484 and a separately measured 5.935-second model load.
+These are throughput observations, not real-time or perceptual-quality claims;
+the exact workload and individual samples are retained in the baseline.
 
 ## Runtime boundaries
 

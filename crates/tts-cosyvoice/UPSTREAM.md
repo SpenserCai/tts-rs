@@ -22,6 +22,12 @@ Changes include standalone modules and Rust APIs, corrected guidance and HiFT
 defaults, full-tokenizer validation, conditioning validation, and explicit
 shared-noise import. An identical numeric seed in different RNG implementations
 does not imply identical noise. Model weights are not distributed with this crate.
+The F0 predictor uses float64 on CPU, including with an accelerated main model.
+Its normalized weights must be materialized from float64 gain/direction tensors;
+promoting weights already folded in float32 loses measurable phase precision.
+The converter uses the same weight-normalization primitive as the pinned Python
+reference. Linear source interpolation and reflective STFT padding follow the
+official operations without substituting average pooling or zero padding.
 
 ## Validation boundary
 

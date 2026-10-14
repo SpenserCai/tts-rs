@@ -2,7 +2,7 @@
 name = "tts-qwen"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version.workspace = true
 description = "Local Candle inference for Qwen3-TTS"
 license = "MIT"
 repository = "https://github.com/SpenserCai/tts-rs"

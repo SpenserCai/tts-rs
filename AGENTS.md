@@ -48,6 +48,13 @@ teacher-forced inputs. Test tails, padding, normalization, RoPE, masks and cache
 offsets when changing those operations. Missing weights/fixtures/operators fail
 the requested model test; they must not turn into a passing skipped test.
 
+Keep reference environments separate by model family and verify their pinned
+runtime dependencies before importing model code. A newer Transformers version
+can change cached attention semantics without changing checkpoint weights. For
+prepared Linux reference runs, use `scripts/reference/offline_exec.py` to deny
+network syscalls at the kernel boundary; download dependencies and weights before
+entering that boundary. Offline environment variables alone are insufficient.
+
 Record measured error and tolerance per component. Speaker parity does not prove
 codec, language model, full waveform, CUDA or Metal parity. State untested support
 precisely in capability tables and verification artifacts. Do not fabricate a
