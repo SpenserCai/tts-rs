@@ -1,0 +1,119 @@
+name: Manual model evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Numerical parity, speech e2e, or model benchmark
+        type: choice
+        options: [parity, e2e, benchmark]
+        default: parity
+      model:
+        description: Model implementation to evaluate
+        type: choice
+        options: [qwen, cosyvoice]
+        default: qwen
+      device:
+        description: CUDA requires an existing self-hosted Linux x64 runner labelled cuda
+        type: choice
+        options: [cpu, cuda, metal]
+        default: cpu
+      fixture_kind:
+        description: Parity/benchmark fixtures; E2E uses real weights and its own corpus
+        type: choice
+        options: [synthetic, pretrained]
+        default: synthetic
+      e2e_manifest:
+        description: Optional repository-relative manifest; Qwen CPU has an automatic fixture
+        type: string
+        default: ''
+      wasm_speaker:
+        description: Also test WASM Qwen speaker weights; requires qwen/cpu/parity/pretrained
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evaluation-${{ github.ref }}-${{ inputs.model }}-${{ inputs.suite }}-${{ inputs.device }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    runs-on: ${{ fromJSON(inputs.device == 'cuda' && '["self-hosted","Linux","X64","cuda"]' || inputs.device == 'metal' && '["macos-15"]' || '["ubuntu-24.04"]') }}
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: '0'
+      RUSTFLAGS: -D warnings
+      HF_HOME: ${{ github.workspace }}/.cache/huggingface
+      TTS_SUITE: ${{ inputs.suite }}
+      TTS_MODEL: ${{ inputs.model }}
+      TTS_DEVICE: ${{ inputs.device }}
+      TTS_FIXTURE: ${{ inputs.fixture_kind }}
+      TTS_E2E_MANIFEST: ${{ inputs.e2e_manifest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Validate the optional WASM evaluation combination
+        if: inputs.wasm_speaker && (inputs.model != 'qwen' || inputs.device != 'cpu' || inputs.suite != 'parity' || inputs.fixture_kind != 'pretrained')
+        run: python -c "raise SystemExit('WASM speaker evaluation requires qwen / cpu / parity / pretrained')"
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: evaluation-${{ inputs.device }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: inputs.fixture_kind == 'pretrained' || inputs.suite == 'e2e'
+        with:
+          path: .cache/huggingface
+          key: model-${{ inputs.model }}-${{ hashFiles('scripts/reference/**/*') }}
+      - name: Install the explicit external CPU frontend runtime
+        if: inputs.model == 'cosyvoice' && inputs.suite == 'e2e'
+        run: python scripts/install_onnxruntime.py --output .cache/onnxruntime --github-env
+      - name: Execute the selected real evaluation
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import sys
+          command = [sys.executable, "scripts/reference/run.py",
+                     "--suite", os.environ["TTS_SUITE"],
+                     "--model", os.environ["TTS_MODEL"],
+                     "--device", os.environ["TTS_DEVICE"],
+                     "--fixture-kind", os.environ["TTS_FIXTURE"],
+                     "--prepare-env", "--output", "target/evaluation"]
+          if os.environ["TTS_E2E_MANIFEST"]:
+              command += ["--e2e-manifest", os.environ["TTS_E2E_MANIFEST"]]
+          subprocess.run(command, check=True)
+          PY
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: inputs.wasm_speaker
+        with:
+          node-version: '24'
+      - name: Build the optional WASM Qwen speaker package
+        if: inputs.wasm_speaker
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --version 0.15.0 --locked
+          wasm-pack build bindings/wasm --target nodejs --out-dir pkg-qwen --features qwen --locked
+      - name: Compare WASM to the same real-weight Python fixture
+        if: inputs.wasm_speaker
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          command = ["node", "bindings/wasm/tests/qwen.cjs", "target/evaluation", "bindings/wasm/pkg-qwen"]
+          with Path("target/evaluation/wasm-speaker.json").open("w", encoding="utf-8") as output:
+              subprocess.run(command, stdout=output, check=True)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: evaluation-${{ inputs.model }}-${{ inputs.suite }}-${{ inputs.device }}-${{ github.sha }}
+          path: target/evaluation
+          if-no-files-found: error
+          retention-days: 14
