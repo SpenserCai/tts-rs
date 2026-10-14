@@ -1,0 +1,100 @@
+name: Manual CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Quick Linux checks or the full native and binding matrix
+        type: choice
+        options: [quick, full]
+        default: quick
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  rust:
+    name: Rust / ${{ matrix.os }} / ${{ matrix.device }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(inputs.profile == 'full' && '[{"os":"ubuntu-24.04","device":"cpu"},{"os":"windows-2025","device":"cpu"},{"os":"macos-15","device":"metal"}]' || '[{"os":"ubuntu-24.04","device":"cpu"}]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: rust-${{ matrix.device }}
+      - name: Zero-warning Rust checks
+        env:
+          TTS_DEVICE: ${{ matrix.device }}
+        run: python scripts/ci.py rust --device ${{ matrix.device }}
+
+  native-bindings:
+    if: inputs.profile == 'full'
+    needs: rust
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: bindings/node/package-lock.json
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: native-bindings
+      - run: python -m pip install maturin==1.14.0
+      - run: python scripts/ci.py bindings --kind python
+      - run: python scripts/ci.py bindings --kind node
+
+  wasm:
+    if: inputs.profile == 'full'
+    needs: rust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: wasm
+      - run: python scripts/install_wasm_pack.py --github-path
+      - run: python scripts/ci.py bindings --kind wasm

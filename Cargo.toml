@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "bindings/python", "bindings/node", "bindings/wasm"]
+default-members = ["crates/tts-core", "crates/tts-qwen", "crates/tts-cosyvoice", "crates/tts"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/SpenserCai/tts-rs"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+
+[workspace.dependencies]
+tts-core = { path = "crates/tts-core", version = "0.1.0" }
+tts-qwen = { path = "crates/tts-qwen", version = "0.1.0" }
+tts-cosyvoice = { path = "crates/tts-cosyvoice", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[profile.dev]
+debug = 0
+
+[profile.test]
+debug = 0

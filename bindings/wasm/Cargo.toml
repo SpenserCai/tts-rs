@@ -1,0 +1,37 @@
+[package]
+name = "tts-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Candle audio and speech inference for WebAssembly and memory64"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+qwen = ["dep:tts-qwen", "dep:candle-core", "dep:candle-nn", "dep:getrandom", "dep:js-sys"]
+qwen-synthesis = ["qwen", "dep:tts-rs", "dep:tokenizers"]
+
+[dependencies]
+serde_json.workspace = true
+tts-core = { path = "../../crates/tts-core" }
+wasm-bindgen = "0.2.129"
+tts-rs = { package = "candle-tts", path = "../../crates/tts", default-features = false, features = ["qwen"], optional = true }
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"], optional = true }
+candle-core = { workspace = true, optional = true }
+candle-nn = { workspace = true, optional = true }
+tts-qwen = { path = "../../crates/tts-qwen", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"], optional = true }
+
+[target.'cfg(target_arch = "wasm64")'.dependencies]
+js-sys = { version = "0.3", optional = true }
+getrandom = { version = "0.3", optional = true }
+
+[lints]
+workspace = true

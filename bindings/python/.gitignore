@@ -1,0 +1,3 @@
+/dist/
+/python/candle_tts/_native*.so
+/python/candle_tts/_native*.pyd

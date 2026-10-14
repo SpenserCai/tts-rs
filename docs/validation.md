@@ -1,0 +1,213 @@
+# Reproducible validation
+
+Treat build checks, component parity, pretrained end-to-end parity, binding
+installation and perceptual quality as separate claims. A successful import or
+finite waveform is useful evidence but does not establish numerical equivalence.
+
+## Ordinary changes
+
+```sh
+python scripts/ci.py rust
+python scripts/ci.py bindings --kind python
+python scripts/ci.py bindings --kind node
+python scripts/ci.py bindings --kind wasm
+```
+
+The Rust gate checks formatting, Clippy with warnings denied, tests and rustdoc.
+It also checks the facade without a model and with each model independently.
+Native binding checks build real packages, install/load them and run smoke tests.
+The normal test suite does not download weights. Use the manual full CI profile
+for Windows x64 and macOS ARM; Linux success does not certify those platforms.
+
+## Official Python oracle
+
+`scripts/reference/pins.json` is the source of truth for official Python and
+checkpoint revisions. `prepare_env.py` checks out those revisions and rejects a
+dirty reference tree. It pins the core runtime dependencies and records the full
+resolved environment. It does not pretend that all transitive packages are locked.
+Each model family has its own virtual environment: Qwen uses Torch 2.10, while
+CosyVoice uses the upstream Torch/torchaudio 2.3.1 and Transformers 4.51.3
+contract. In particular, changing Transformers can change cached attention-mask
+behavior without changing any checkpoint tensor. A different runtime is a new
+oracle configuration and must be recorded and validated separately.
+
+On Linux, `scripts/reference/offline_exec.py -- COMMAND ...` runs an already
+prepared command with a libseccomp policy that denies socket creation and network
+transmission across child processes. It fails closed if that policy cannot be
+installed. Download dependencies and checkpoints beforehand; environment flags
+such as `HF_HUB_OFFLINE` alone do not enforce this boundary.
+Use `run.py --offline-reference` to apply that policy to both model processes
+while leaving downloads, environment preparation and Cargo compilation outside.
+Cargo needs local IPC; wrapping the entire build pipeline is not equivalent to
+isolating model execution. Linux model-evaluation workflows select this flag.
+
+```sh
+python scripts/reference/run.py --suite parity --model qwen --device cpu \
+  --prepare-env --fixture-kind synthetic --output artifacts/qwen-small
+
+python scripts/reference/run.py --suite parity --model cosyvoice --device cpu \
+  --prepare-env --fixture-kind synthetic --output artifacts/cosy-small
+
+python scripts/reference/run.py --suite e2e --model qwen --device cpu \
+  --prepare-env --output target/qwen-e2e
+
+python scripts/reference/run.py --suite parity --model cosyvoice --device cpu \
+  --prepare-env --fixture-kind pretrained --component hift --output target/cosy-hift
+```
+
+The Qwen synthetic check runs the complete speaker encoder with small deterministic
+weights. The CosyVoice synthetic check covers DiT conditioning primitives and
+the official tanh-GELU feed-forward network; it is
+not a full-model test. Pretrained Qwen speaker testing can fetch only the speaker
+tensor ranges, avoiding a full speech model download. See `--help` on
+`download_speaker.py` and `export_qwen.py` for explicit paths and revisions.
+
+For full-model checks, provide matching weights, tokenization, reference PCM,
+precision, and decoding settings. Use greedy decoding or exported shared random
+tensors. Equal seeds in Rust and PyTorch do not imply identical draws. CosyVoice
+also requires shared flow noise and vocoder noise for waveform comparisons.
+
+Automatic Qwen E2E runs two public numerical smoke cases in sequence: x-vector
+conditioning from an analytic tone, then ICL conditioned on that case's generated
+audio and known text. The ICL gate also compares every reference codec ID. A
+20-token cap bounds runtime; it is not an assertion of natural EOS or voice quality.
+
+Pretrained CosyVoice CPU stages are selected with `--component hift`, `flow`,
+`llm` or `all` in both `run.py` and the manual model-evaluation workflow. The
+default input is analytic, with no recording. Reuse reviewed public features
+with `--prompt-features`; reuse checkpoints with `--model-directory` and
+`--converted-model-directory`, and a checkout with `--cosyvoice-source`.
+Each stage executes official Python and Candle; shared randomness is serialized,
+not inferred from seed equality. Failed stages remain failures. Full chained
+CosyVoice E2E requires a reviewed manifest and separate evidence.
+
+The [observed validation baseline](../tests/fixtures/validation-baseline.json)
+contains public scalar metrics, pins and exact scopes. CPU Qwen speaker and full
+bounded x-vector/ICL outputs passed `atol=1e-5, rtol=1e-4`; both ICL reference and
+generated code sequences matched exactly (304 IDs each). Under CosyVoice's pinned
+runtime, LM first logits passed and all 60 bounded greedy speech tokens matched;
+the same runtime's HiFT waveform passed on 15,360 samples, with maximum absolute
+error `2.504e-6`. These
+observations do not certify every intermediate tensor, input, language or device.
+
+CosyVoice's complete native flow path is implemented. Its strict float32
+acceptance remains input-dependent. The historical official-runtime default
+comparison failed on 124 of 1,280 mel values (`max_abs=1.201e-3`). Subsequent
+source review corrected two real semantics issues locally: DiT now respects
+padding masks and clears masked attention projections; RoPE evaluates power and
+reciprocal in float32, matching upstream. No Candle fork or full-model float64
+promotion is involved.
+
+The [flow diagnosis](../tests/fixtures/cosyvoice-flow-diagnostics.json) records
+two token slices of the same public analytic input after those repairs. For
+8 prompt + 8 target tokens, 51 of 1,280 mel values still fail the original gate
+(`max_abs=1.125e-3`, `RMSE=1.218e-4`). The official implementation itself fails
+on 94 values when switching only CPU attention from SDPA to MATH. For 4 + 4
+tokens, all 640 mel values pass against both official backends.
+
+First-step layer traces locate the divergence: conditioning, input embeddings,
+and the first two blocks pass; both Candle-versus-official and official
+SDPA-versus-MATH first exceed the gate in block 2 (zero based). Later residual
+outputs amplify the differences before final normalization reduces them. This
+supports float32 attention/reduction roundoff accumulation as the explanation
+for the remaining observed error, rather than a missing operator or stage. It
+is not proof for every input. All failed comparisons remain recorded, and the
+threshold is unchanged. Use `export_cosyvoice_flow.py --layerwise` and pass
+`--layerwise` as the final argument to `flow_oracle` to reproduce the optional
+first-step traces; normal evaluation avoids that extra replay and artifact size.
+
+A separate earlier coupled check feeds each implementation's own flow mel into HiFT with
+identical serialized source noise. On this 7,680-sample public fixture, Candle
+versus official SDPA measured waveform RMSE `1.624e-4` and SNR `53.97 dB`; official
+SDPA versus MATH measured RMSE `1.557e-3` and SNR `34.33 dB`. This bounds one
+observed downstream effect, not perceptual quality or universal equivalence.
+That coupled waveform failed strict elementwise parity; it has not been rerun
+with the subsequent RoPE/padding repairs.
+
+## Strict comparisons
+
+```sh
+python scripts/reference/compare_tensors.py --help
+python scripts/reference/run.py --suite e2e --model qwen \
+  --e2e-manifest /path/to/manifest.json --output artifacts/e2e
+```
+
+The manifest records source revision, hashes of inputs and checkpoint files,
+commands for both implementations, output paths and the stochastic-input strategy.
+Commands are argument arrays rather than shell strings. Stale output files are
+rejected. Both implementations must produce a real, nonempty waveform tensor and
+the same positive sample rate. Missing tensors, shape changes and non-finite
+values fail the check. Integer code tensors must match exactly.
+
+For floating tensors, a value passes when
+`abs(candidate - reference) <= atol + rtol * abs(reference)`. Reports include
+maximum and mean absolute error, RMSE, failing element counts and cosine
+similarity. Defaults are `atol=1e-5`, `rtol=1e-4` for current CPU float32 fixtures;
+document a mathematical reason and evidence before changing a tolerance.
+Waveform reports also include reference RMS/peak and error SNR. SNR is `null`
+when its reference or error energy is zero; `identical_waveform` distinguishes
+the exact-match case. These diagnostics never override the strict pass result.
+
+For coupled flow/vocoder diagnostics, `export_cosyvoice_stages.py --mel-input`
+accepts a flow tensor document in place of `--prompt-features`. Export the
+reference waveform and its `source-noise.safetensors`, then pass that same noise
+to `hift_oracle` with the candidate flow document. Use `--source-noise` to replay
+it in another Python backend run. Explicit `--frames` must match the tested mel
+length. Compare the resulting waveform documents with `compare_tensors.py`;
+retain both the strict failures and the RMS/SNR diagnostics.
+
+Compare intermediates in order: frontend features → speaker/conditioning → LM
+logits or fixed codes → acoustic decoder → waveform. This distinguishes a token
+boundary error from a numeric kernel difference. A waveform test from one short
+utterance does not certify every language, model size, sampling mode or stream.
+
+## Benchmarking
+
+```sh
+cargo bench -p tts-core --bench audio
+python scripts/reference/run.py --suite benchmark --model qwen --device cpu \
+  --prepare-env --output artifacts/speaker-benchmark
+
+python scripts/reference/benchmark_tts.py --model-dir /path/to/qwen-base \
+  --output target/tts-benchmark --warmups 1 --runs 3 --threads 1
+
+python scripts/reference/run.py --suite benchmark --model qwen --device cpu \
+  --benchmark-kind tts --prepare-env --runs 3 --output artifacts/tts-benchmark
+```
+
+Criterion measures audio operations, not TTS real-time factor. Model evaluation
+separates process/load overhead from synthesis where supported, records machine,
+runtime, source revision and device, and uses warm-up plus repeated runs. GPU
+timing requires synchronization. Report peak memory and output duration alongside
+latency/RTF; do not interpret shared CI runner timing as a stable performance gate.
+The observed resident CPU probe used one thread, one warmup and two measured
+runs on a shared AMD EPYC host. It generated 1.52 seconds per request, with a
+median request RTF of 5.484 and a separately measured 5.935-second model load.
+These are throughput observations, not real-time or perceptual-quality claims;
+the exact workload and individual samples are retained in the baseline.
+
+## Runtime boundaries
+
+CPU is portable; CUDA and Metal require their native runtimes and dedicated
+execution evidence. CosyVoice's reference frontend additionally requires ONNX
+Runtime 1.24+ through `ORT_DYLIB_PATH`. Missing runtime libraries fail explicitly.
+
+WASM is validated separately. Query its capability report. The official Qwen
+0.6B checkpoint expands to more than 4 GiB of float32 parameters across the main
+model and codec, before caches and activations. The wasm32 package provides audio
+and speaker components; the separate memory64 package loads and executes the
+full Qwen pipeline using explicit model bytes.
+
+The [memory64 validation record](../tests/fixtures/qwen-memory64-validation.json)
+documents execution of the published web module on Node 24.19.0/Linux x64. The
+same analytic tone, text and greedy 20-token budget used by native x-vector E2E
+produced 36,480 finite samples. Maximum waveform error was `5.271e-9` against
+official Python and `5.180e-9` against native Rust; every value passed the existing
+gate. Peak process RSS was 6,248,228 KiB. A separate test allocated a Rust object
+above 4 GiB and round-tripped its samples through JavaScript. This evidence does
+not certify browser engines, memory64 ICL, natural EOS, voice quality or other
+checkpoints; the full-model fixture deliberately stops at a 20-token budget.
+
+Voice recordings and extracted personal prompts stay outside this public
+repository. CI fixtures use synthetic signals or explicitly documented public
+inputs. Measured verification summaries omit personal audio, embeddings and paths.

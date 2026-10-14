@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "qwen": {
+    "repository": "https://github.com/Qwen/Qwen3-TTS.git",
+    "revision": "022e286b98fbec7e1e916cb940cdf532cd9f488e",
+    "model_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "model_revision": "5d83992436eae1d760afd27aff78a71d676296fc"
+  },
+  "cosyvoice": {
+    "repository": "https://github.com/QwenAudio/CosyVoice.git",
+    "revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+    "matcha_revision": "dd9105b34bf2be2230f4aa1e4769fb586a3c824e",
+    "model_id": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+    "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+    "weights_sha256": {
+      "llm.pt": "69f43bd545131c30e98947fb360ea8b4dc9916d8e83dded7757c7ea4f5a24970",
+      "flow.pt": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+      "hift.pt": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65"
+    }
+  },
+  "python": "3.12",
+  "safetensors": "0.7.0",
+  "x_transformers": "2.11.24",
+  "cosyvoice_reference_packages": [
+    "transformers==4.51.3",
+    "omegaconf==2.3.0",
+    "hyperpyyaml==1.2.3",
+    "conformer==0.3.2",
+    "diffusers==0.29.0",
+    "lightning==2.2.4",
+    "hydra-core==1.3.2",
+    "rootutils==1.0.7",
+    "gdown==5.1.0",
+    "matplotlib==3.7.5",
+    "wget==3.2",
+    "librosa==0.10.2",
+    "soundfile==0.12.1",
+    "openai-whisper==20231117",
+    "inflect==7.3.1",
+    "onnxruntime==1.18.0",
+    "tokenizers==0.21.4",
+    "numpy==1.26.4",
+    "setuptools==75.8.0",
+    "rich==13.7.1"
+  ],
+  "runtimes": {
+    "qwen": {
+      "torch": "2.10.0",
+      "torchaudio": "2.10.0"
+    },
+    "cosyvoice": {
+      "torch": "2.3.1",
+      "torchaudio": "2.3.1",
+      "transformers": "4.51.3",
+      "x-transformers": "2.11.24"
+    }
+  },
+  "cosyvoice_dependency_scope": "Selected inference and mathematical dependencies match upstream requirements; tokenizers is pinned within the upstream Transformers range. ONNX Runtime uses the matching 1.18.0 CPU distribution rather than the Linux GPU distribution. Optional serving, training and accelerator backends are excluded. Setuptools 75.8.0 supplies pkg_resources required by upstream Lightning and the Whisper source build."
+}
