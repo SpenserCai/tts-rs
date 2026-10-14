@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import ctypes.util
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import textwrap
 
 from package_licenses import stage, verify
 
@@ -95,6 +98,39 @@ def wasm_binding() -> None:
     stage("wasm", cwd / "pkg-web", npm=True)
 
 
+def offline_reference(install_if_missing: bool) -> None:
+    """Fail closed unless the kernel policy blocks sockets and survives child exec."""
+    if not sys.platform.startswith("linux"):
+        raise SystemExit("Offline reference isolation is supported only on Linux")
+    library = ctypes.util.find_library("seccomp")
+    if library is None:
+        if not install_if_missing:
+            raise SystemExit("The Linux CUDA runner must provide libseccomp (Debian/Ubuntu: libseccomp2) and permit seccomp filters")
+        run("sudo", "apt-get", "update")
+        run("sudo", "apt-get", "install", "--yes", "--no-install-recommends", "libseccomp2")
+        library = ctypes.util.find_library("seccomp")
+    if library is None:
+        raise SystemExit("libseccomp is unavailable after installation; refusing to run model evaluation")
+    ctypes.CDLL(library)
+    probe = textwrap.dedent("""\
+        import errno
+        import socket
+        for family in (socket.AF_INET, socket.AF_INET6, socket.AF_UNIX):
+            try:
+                connection = socket.socket(family, socket.SOCK_STREAM)
+            except OSError as error:
+                if error.errno != errno.EPERM:
+                    raise RuntimeError(f'Expected EPERM for socket family {family}') from error
+            else:
+                connection.close()
+                raise RuntimeError(f'Offline policy allowed socket family {family}')
+        """)
+    inherited = probe + f"\nimport subprocess, sys\nsubprocess.run([sys.executable, '-c', {probe!r}], check=True)\n"
+    run(sys.executable, str(ROOT / "scripts/reference/offline_exec.py"), "--",
+        sys.executable, "-c", inherited)
+    print("Validated Linux socket denial for IPv4, IPv6 and Unix sockets, including child exec")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -102,9 +138,14 @@ def main() -> None:
     rust.add_argument("--device", choices=("cpu", "cuda", "metal"), default="cpu")
     bindings = commands.add_parser("bindings", help="Build and import the actual language package")
     bindings.add_argument("--kind", choices=("python", "node", "wasm"), required=True)
+    offline = commands.add_parser("offline-reference", help="Verify the Linux kernel model-network boundary")
+    offline.add_argument("--install-if-missing", action="store_true",
+                         help="Explicitly install libseccomp2 with apt on the hosted Ubuntu runner")
     args = parser.parse_args()
     if args.command == "rust":
         rust_checks(args.device)
+    elif args.command == "offline-reference":
+        offline_reference(args.install_if_missing)
     else:
         {"python": python_binding, "node": node_binding, "wasm": wasm_binding}[args.kind]()
 

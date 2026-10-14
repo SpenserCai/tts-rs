@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from common import PINS, environment, offline_reference_runtime, reference_runtime, revision, sha256, tensor_document, write_json
+from common import PINS, environment, offline_reference_runtime, pinned_checkpoint_sha256, reference_runtime, revision, sha256, tensor_document, write_json
 
 
 def main() -> None:
@@ -28,6 +28,7 @@ def main() -> None:
     if args.max_tokens < 1:
         raise ValueError("max-tokens must be positive")
     runtime = reference_runtime("cosyvoice")
+    weights_sha256 = pinned_checkpoint_sha256("cosyvoice", args.model / "llm.pt")
     offline_reference_runtime()
     sys.path.insert(0, str(source))
     import torch
@@ -91,7 +92,7 @@ def main() -> None:
         "runtime": runtime,
         "source_revision": PINS["cosyvoice"]["revision"],
         "model_revision": PINS["cosyvoice"]["model_revision"],
-        "weights_sha256": sha256(args.model / "llm.pt"),
+        "weights_sha256": weights_sha256,
         "prompt_features_sha256": sha256(args.prompt_features),
         "max_tokens": args.max_tokens, "min_token_text_ratio": 2, "max_token_text_ratio": max_ratio,
         "attention_implementation": model.llm.model.config._attn_implementation,

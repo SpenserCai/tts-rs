@@ -36,6 +36,10 @@ prepared command with a libseccomp policy that denies socket creation and networ
 transmission across child processes. It fails closed if that policy cannot be
 installed. Download dependencies and checkpoints beforehand; environment flags
 such as `HF_HUB_OFFLINE` alone do not enforce this boundary.
+Use `run.py --offline-reference` to apply that policy to both model processes
+while leaving downloads, environment preparation and Cargo compilation outside.
+Cargo needs local IPC; wrapping the entire build pipeline is not equivalent to
+isolating model execution. Linux model-evaluation workflows select this flag.
 
 ```sh
 python scripts/reference/run.py --suite parity --model qwen --device cpu \
@@ -80,9 +84,24 @@ CosyVoice E2E requires a reviewed manifest and separate evidence.
 The [observed validation baseline](../tests/fixtures/validation-baseline.json)
 contains public scalar metrics, pins and exact scopes. CPU Qwen speaker and full
 bounded x-vector/ICL outputs passed `atol=1e-5, rtol=1e-4`; both ICL reference and
-generated code sequences matched exactly (304 IDs each). Pretrained HiFT's 15,360
-sample waveform also passed, with maximum absolute error `7.853e-6`. These
+generated code sequences matched exactly (304 IDs each). Under CosyVoice's pinned
+runtime, LM first logits passed and all 60 bounded greedy speech tokens matched;
+the same runtime's HiFT waveform passed on 15,360 samples, with maximum absolute
+error `2.504e-6`. These
 observations do not certify every intermediate tensor, input, language or device.
+
+CosyVoice flow does not pass the current acceptance gate: the official-runtime
+default comparison failed on 124 of 1,280 mel values (`max_abs=1.201e-3`). The
+official implementation itself also fails that strict gate when switching only
+its CPU attention backend from SDPA to MATH. Both failures are retained rather
+than widening the tolerance from one example.
+
+A separate coupled check feeds each implementation's own flow mel into HiFT with
+identical serialized source noise. On this 7,680-sample public fixture, Candle
+versus official SDPA measured waveform RMSE `1.624e-4` and SNR `53.97 dB`; official
+SDPA versus MATH measured RMSE `1.557e-3` and SNR `34.33 dB`. This bounds one
+observed downstream effect, not perceptual quality or universal equivalence.
+The coupled waveform still fails strict elementwise parity.
 
 ## Strict comparisons
 
@@ -104,6 +123,17 @@ For floating tensors, a value passes when
 maximum and mean absolute error, RMSE, failing element counts and cosine
 similarity. Defaults are `atol=1e-5`, `rtol=1e-4` for current CPU float32 fixtures;
 document a mathematical reason and evidence before changing a tolerance.
+Waveform reports also include reference RMS/peak and error SNR. SNR is `null`
+when its reference or error energy is zero; `identical_waveform` distinguishes
+the exact-match case. These diagnostics never override the strict pass result.
+
+For coupled flow/vocoder diagnostics, `export_cosyvoice_stages.py --mel-input`
+accepts a flow tensor document in place of `--prompt-features`. Export the
+reference waveform and its `source-noise.safetensors`, then pass that same noise
+to `hift_oracle` with the candidate flow document. Use `--source-noise` to replay
+it in another Python backend run. Explicit `--frames` must match the tested mel
+length. Compare the resulting waveform documents with `compare_tensors.py`;
+retain both the strict failures and the RMS/SNR diagnostics.
 
 Compare intermediates in order: frontend features → speaker/conditioning → LM
 logits or fixed codes → acoustic decoder → waveform. This distinguishes a token

@@ -42,12 +42,32 @@ def offline_reference_runtime() -> None:
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 
+def model_command(command: list[str], offline: bool) -> list[str]:
+    """Apply the offline boundary only to model execution, never preparation."""
+    if not offline:
+        return command
+    if not sys.platform.startswith("linux"):
+        raise ValueError("--offline-reference requires Linux and libseccomp")
+    return [sys.executable, str(Path(__file__).with_name("offline_exec.py")), "--", *command]
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def pinned_checkpoint_sha256(model: str, path: Path) -> str:
+    """Bind a local checkpoint to the claimed upstream model revision."""
+    expected = PINS[model]["weights_sha256"].get(path.name)
+    if expected is None:
+        raise ValueError(f"No reviewed checkpoint digest for {model}/{path.name}")
+    actual = sha256(path)
+    if actual != expected:
+        raise ValueError(f"Checkpoint does not match pinned {model} revision: {path.name}")
+    return actual
 
 
 def write_json(path: Path, value: Any) -> None:

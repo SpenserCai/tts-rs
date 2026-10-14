@@ -14,7 +14,7 @@ on:
         options: [qwen, cosyvoice]
         default: qwen
       device:
-        description: CUDA requires an existing self-hosted Linux x64 runner labelled cuda
+        description: CUDA needs a Linux x64 cuda runner with libseccomp and working seccomp; offline isolation is Linux-only
         type: choice
         options: [cpu, cuda, metal]
         default: cpu
@@ -80,6 +80,15 @@ jobs:
       - name: Validate an explicitly selected full synthesis benchmark
         if: inputs.benchmark_kind == 'tts' && (inputs.model != 'qwen' || inputs.device != 'cpu' || inputs.suite != 'benchmark')
         run: python -c "raise SystemExit('Full synthesis benchmarking requires qwen / cpu / benchmark')"
+      - name: Verify hosted Linux model network isolation
+        if: runner.os == 'Linux' && inputs.device == 'cpu'
+        run: python scripts/ci.py offline-reference --install-if-missing
+      - name: Verify the self-hosted CUDA isolation prerequisites
+        if: runner.os == 'Linux' && inputs.device == 'cuda'
+        run: python scripts/ci.py offline-reference
+      - name: Record the non-Linux isolation boundary
+        if: runner.os != 'Linux'
+        run: python -c "print('Kernel offline reference isolation is unavailable on this Metal runner; evaluation will not claim it')"
       - run: rustup show active-toolchain
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -108,6 +117,8 @@ jobs:
                      "--prepare-env", "--output", "target/evaluation"]
           if os.environ["TTS_E2E_MANIFEST"]:
               command += ["--e2e-manifest", os.environ["TTS_E2E_MANIFEST"]]
+          if sys.platform.startswith("linux"):
+              command.append("--offline-reference")
           subprocess.run(command, check=True)
           PY
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -128,7 +139,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import subprocess
-          command = ["node", "bindings/wasm/tests/qwen.cjs", "target/evaluation", "bindings/wasm/pkg-qwen"]
+          import sys
+          command = [sys.executable, "scripts/reference/offline_exec.py", "--", "node",
+                     "bindings/wasm/tests/qwen.cjs", "target/evaluation", "bindings/wasm/pkg-qwen"]
           with Path("target/evaluation/wasm-speaker.json").open("w", encoding="utf-8") as output:
               subprocess.run(command, stdout=output, check=True)
           PY

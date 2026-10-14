@@ -88,6 +88,16 @@ def compare(reference: Path, candidate: Path, atol: float, rtol: float) -> dict[
                 first_failing_indices=failures[:16],
                 comparison="exact" if integer else "abs(candidate-reference) <= atol + rtol*abs(reference)",
             )
+            if name == "waveform" and not integer:
+                signal_energy = l2_left * l2_left
+                error_energy = sum(error * error for error in errors)
+                item.update(
+                    reference_rms=l2_left / math.sqrt(len(errors)),
+                    reference_peak=max(abs(value) for value, _ in pairs),
+                    identical_waveform=error_energy == 0,
+                    snr_db=(10 * math.log10(signal_energy / error_energy)
+                            if signal_energy > 0 and error_energy > 0 else None),
+                )
         report["tensors"][name] = item
         report["passed"] &= item["passed"]
     return report

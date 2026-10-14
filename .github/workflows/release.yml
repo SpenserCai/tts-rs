@@ -22,6 +22,7 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
   RELEASE_TAG: ${{ inputs.tag }}
@@ -51,7 +52,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-crates
-          path: target/package/*.crate
+          path: target/release-crates/*.crate
           if-no-files-found: error
           retention-days: 14
 

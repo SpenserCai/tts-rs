@@ -15,6 +15,16 @@ CosyVoice oracle pins its upstream Torch/torchaudio 2.3.1 and Transformers 4.51.
 runtime rather than inheriting Qwen's newer dependencies. Optional serving and
 training stacks are not installed; selected upstream inference pins and the
 resolved environment are recorded.
+Pretrained CosyVoice exporters reject mismatched core dependency versions and
+checkpoint digests before loading models. The pinned legacy Whisper build and
+Lightning runtime require the recorded setuptools version that still provides
+`pkg_resources`.
+
+`run.py --offline-reference` applies the Linux libseccomp network-denial policy
+to both Python and Rust model children. Downloads and Cargo compilation happen
+outside it; missing kernel/library support fails explicitly. The standalone
+`e2e.py` and resident `benchmark_tts.py` support the same flag. This avoids
+confusing a build's local IPC requirements with a model's network permissions.
 
 Run from the repository root with Python 3.12 and a working Rust toolchain:
 
@@ -54,6 +64,11 @@ a reviewed public feature file. `--model-directory`, `--converted-model-director
 and `--cosyvoice-source` reuse existing downloads. HiFT phase/sine/UV and flow
 noise tensors are exported from the actual Python execution and replayed by Rust.
 Stage success does not establish full chained CosyVoice waveform parity.
+`export_cosyvoice_stages.py --mel-input FLOW_JSON --frames N` can consume a flow
+result directly; reuse its exact `source-noise.safetensors` in `hift_oracle` with
+the candidate flow document. Python backend comparisons replay it through
+`--source-noise`. The comparator reports waveform RMS, peak and SNR as
+diagnostics while retaining the strict elementwise pass/fail result.
 
 Automatic Qwen E2E downloads the full pinned Base model, creates a one-second
 analytic tone as conditioning, and runs both implementations sequentially using

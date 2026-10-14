@@ -68,6 +68,51 @@ def rust_packages(publish: bool) -> None:
     if not publish:
         args.append("--dry-run")
     run(*args)
+    if not publish:
+        collect_crates()
+
+
+def collect_crates() -> None:
+    """Collect this commit's verified archives, including Cargo's workspace staging layout."""
+    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    expected = {}
+    for member in workspace["members"]:
+        for path in ROOT.glob(f"{member}/Cargo.toml"):
+            package = tomllib.loads(path.read_text(encoding="utf-8"))["package"]
+            if package["name"] in EXCLUDED or package.get("publish") is False:
+                continue
+            version = package["version"]
+            if version == {"workspace": True}:
+                version = workspace["package"]["version"]
+            expected[f"{package['name']}-{version}.crate"] = f"{package['name']}-{version}"
+    if not expected:
+        raise SystemExit("No publishable workspace crates found")
+    target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
+    if not target.is_absolute():
+        target = ROOT / target
+    output = target / "release-crates"
+    if set(path.name for path in output.glob("*.crate")) - set(expected):
+        raise SystemExit("Unexpected stale archives in target/release-crates; select a fresh output directory")
+    commit = capture("git", "rev-parse", "HEAD")
+    selected = {}
+    for filename, prefix in expected.items():
+        candidates = {}
+        for path in (target / "package").rglob(filename):
+            with tarfile.open(path) as archive:
+                try:
+                    stream = archive.extractfile(f"{prefix}/.cargo_vcs_info.json")
+                except KeyError:
+                    continue
+                if stream is None or json.load(stream).get("git", {}).get("sha1") != commit:
+                    continue
+            candidates[hashlib.sha256(path.read_bytes()).hexdigest()] = path
+        if len(candidates) != 1:
+            raise SystemExit(f"Expected one unique verified archive for {filename} at {commit}; found {len(candidates)}")
+        selected[filename] = next(iter(candidates.values()))
+    output.mkdir(parents=True, exist_ok=True)
+    for filename, source in selected.items():
+        shutil.copyfile(source, output / filename)
+    print(f"Collected {len(selected)} Cargo archives for {commit} in {output}")
 
 
 def collect_node(artifacts: Path, output: Path) -> None:
@@ -210,6 +255,7 @@ def main() -> None:
     pre.add_argument("--publish", action="store_true")
     rust = commands.add_parser("rust")
     rust.add_argument("--publish", action="store_true")
+    commands.add_parser("collect-crates", help="Collect current-commit Cargo archives after a successful dry-run")
     node = commands.add_parser("collect-node")
     node.add_argument("--artifacts", type=Path, required=True)
     node.add_argument("--output", type=Path, required=True)
@@ -231,6 +277,8 @@ def main() -> None:
         preflight(args.tag, args.publish)
     elif args.command == "rust":
         rust_packages(args.publish)
+    elif args.command == "collect-crates":
+        collect_crates()
     elif args.command == "collect-node":
         collect_node(args.artifacts, args.output)
     elif args.command == "checksums":

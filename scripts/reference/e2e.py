@@ -13,11 +13,11 @@ import json
 import subprocess
 from pathlib import Path
 
-from common import PINS, environment, sha256, write_json
+from common import PINS, environment, model_command, sha256, write_json
 from compare_tensors import compare, read_document
 
 
-def run(manifest_path: Path, output: Path, expected_device: str = "cpu") -> dict:
+def run(manifest_path: Path, output: Path, expected_device: str = "cpu", offline: bool = False) -> dict:
     manifest = json.loads(manifest_path.read_text())
     model = manifest["model"]
     if manifest.get("device") != expected_device:
@@ -46,7 +46,7 @@ def run(manifest_path: Path, output: Path, expected_device: str = "cpu") -> dict
         if tensor_path.exists():
             raise ValueError(f"Refuse stale output {tensor_path}; choose a fresh path")
         with (output / f"{implementation}.log").open("w") as log:
-            subprocess.run(command, check=True, stdout=log, stderr=subprocess.STDOUT)
+            subprocess.run(model_command(command, offline), check=True, stdout=log, stderr=subprocess.STDOUT)
         document = read_document(tensor_path)
         if document.get("metadata", {}).get("device") != expected_device:
             raise ValueError(f"{implementation} did not run on the requested device")
@@ -62,6 +62,7 @@ def run(manifest_path: Path, output: Path, expected_device: str = "cpu") -> dict
                      float(manifest["atol"]), float(manifest["rtol"]))
     report.update(environment=environment(), manifest_sha256=sha256(manifest_path),
                   source_revision=manifest["source_revision"], sample_rate=results["reference"][1],
+                  offline_reference=offline,
                   scope="strict numerical end-to-end waveform comparison")
     report["sidecars"] = {}
     for sidecar in manifest.get("sidecars", []):
@@ -78,9 +79,10 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", choices=["cpu", "cuda", "metal"], default="cpu")
+    parser.add_argument("--offline-reference", action="store_true")
     args = parser.parse_args()
     try:
-        report = run(args.manifest, args.output, args.device)
+        report = run(args.manifest, args.output, args.device, args.offline_reference)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
         write_json(args.output / "e2e.json", {"schema_version": 1, "passed": False, "error": str(error)})
         print(str(error))

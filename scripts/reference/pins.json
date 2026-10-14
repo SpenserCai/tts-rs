@@ -11,7 +11,12 @@
     "revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
     "matcha_revision": "dd9105b34bf2be2230f4aa1e4769fb586a3c824e",
     "model_id": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
-    "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18"
+    "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+    "weights_sha256": {
+      "llm.pt": "69f43bd545131c30e98947fb360ea8b4dc9916d8e83dded7757c7ea4f5a24970",
+      "flow.pt": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+      "hift.pt": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65"
+    }
   },
   "python": "3.12",
   "safetensors": "0.7.0",
@@ -34,7 +39,9 @@
     "inflect==7.3.1",
     "onnxruntime==1.18.0",
     "tokenizers==0.21.4",
-    "numpy==1.26.4"
+    "numpy==1.26.4",
+    "setuptools==75.8.0",
+    "rich==13.7.1"
   ],
   "runtimes": {
     "qwen": {
@@ -48,5 +55,5 @@
       "x-transformers": "2.11.24"
     }
   },
-  "cosyvoice_dependency_scope": "Selected inference and mathematical dependencies match upstream requirements; tokenizers is pinned within the upstream Transformers range. ONNX Runtime uses the matching 1.18.0 CPU distribution rather than the Linux GPU distribution. Optional serving, training and accelerator backends are excluded."
+  "cosyvoice_dependency_scope": "Selected inference and mathematical dependencies match upstream requirements; tokenizers is pinned within the upstream Transformers range. ONNX Runtime uses the matching 1.18.0 CPU distribution rather than the Linux GPU distribution. Optional serving, training and accelerator backends are excluded. Setuptools 75.8.0 supplies pkg_resources required by upstream Lightning and the Whisper source build."
 }

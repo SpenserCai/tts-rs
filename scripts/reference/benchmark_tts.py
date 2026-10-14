@@ -17,7 +17,7 @@ import tomllib
 from pathlib import Path
 
 from benchmark import percentile
-from common import PINS, ROOT, environment, revision, sha256, write_json
+from common import PINS, ROOT, environment, model_command, revision, sha256, write_json
 from prepare_qwen_e2e import write_conditioning_tone
 
 
@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=20)
+    parser.add_argument("--offline-reference", action="store_true")
     args = parser.parse_args()
     if not 1 <= args.runs <= 100 or not 0 <= args.warmups <= 20 or args.threads < 1:
         parser.error("runs must be 1..100, warmups 0..20, and threads positive")
@@ -75,8 +76,10 @@ def main() -> int:
         raw = output / "samples.json"
         command = [str(binary), str(model), str(reference), "Hello.", str(raw), str(args.max_new_tokens),
                    str(args.warmups), str(args.runs), "English"]
+        command = model_command(command, args.offline_reference)
         child_env = dict(os.environ, RAYON_NUM_THREADS=str(args.threads), OMP_NUM_THREADS=str(args.threads))
-        report.update(command=command, binary_sha256=sha256(binary), text="Hello.", language="English")
+        report.update(command=command, binary_sha256=sha256(binary), text="Hello.", language="English",
+                      offline_reference=args.offline_reference)
         with (output / "inference.log").open("w") as stream:
             subprocess.run(command, cwd=ROOT, env=child_env, stdout=stream, stderr=subprocess.STDOUT, check=True)
         result = json.loads(raw.read_text())

@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from common import PINS, environment, offline_reference_runtime, reference_runtime, revision, sha256, tensor_document, write_json
+from common import PINS, environment, offline_reference_runtime, pinned_checkpoint_sha256, reference_runtime, revision, sha256, tensor_document, write_json
 
 
 def main() -> None:
@@ -27,6 +27,7 @@ def main() -> None:
         raise RuntimeError("Official CosyVoice/Matcha revisions differ from the reviewed pins")
     sys.path[:0] = [str(source), str(matcha)]
     runtime = reference_runtime("cosyvoice")
+    weights_sha256 = pinned_checkpoint_sha256("cosyvoice", args.weights)
     offline_reference_runtime()
     import torch
     from omegaconf import DictConfig
@@ -89,9 +90,10 @@ def main() -> None:
     metadata = {
         **environment(), "model": "cosyvoice3-flow", "device": "cpu", "dtype": "float32",
         "torch": torch.__version__, "source_revision": PINS["cosyvoice"]["revision"],
+        "model_revision": PINS["cosyvoice"]["model_revision"],
         "runtime": runtime,
         "matcha_revision": PINS["cosyvoice"]["matcha_revision"],
-        "weights_sha256": sha256(args.weights), "input_features_sha256": sha256(args.prompt_features),
+        "weights_sha256": weights_sha256, "input_features_sha256": sha256(args.prompt_features),
         "flow_noise_sha256": sha256(args.output / "flow-noise.safetensors"),
         "timesteps": 10, "streaming": False, "finalize": True,
         "attention_backend": args.attention_backend,

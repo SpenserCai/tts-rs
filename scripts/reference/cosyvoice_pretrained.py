@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common import PINS, ROOT, sha256, write_json
+from common import PINS, ROOT, model_command, pinned_checkpoint_sha256, sha256, write_json
 from compare_tensors import compare
 
 
@@ -26,7 +26,7 @@ def analytic_features(path: Path) -> None:
 
 
 def run(output: Path, source: Path, model: Path | None, converted: Path | None,
-        features: Path | None, component: str) -> dict:
+        features: Path | None, component: str, offline: bool = False) -> dict:
     from huggingface_hub import snapshot_download
 
     output, source = output.resolve(), source.resolve()
@@ -46,16 +46,17 @@ def run(output: Path, source: Path, model: Path | None, converted: Path | None,
         existing = json.loads(conversion.read_text())["files"] if conversion.exists() else {}
         missing = [stage for stage in components if stage + ".safetensors" not in existing]
         if missing:
-            subprocess.run([sys.executable, str(ROOT / "crates/tts-cosyvoice/scripts/convert.py"),
+            command = [sys.executable, str(ROOT / "crates/tts-cosyvoice/scripts/convert.py"),
                             "--source", str(source), "--input", str(model), "--output", str(converted),
-                            "--stages", *missing], check=True)
+                            "--stages", *missing]
+            subprocess.run(model_command(command, offline), check=True)
     converted = converted.resolve()
     conversion = json.loads((converted / "conversion.json").read_text())
     if conversion["upstream_revision"] != PINS["cosyvoice"]["revision"]:
         raise ValueError("Converted checkpoint source revision mismatch")
     for stage in components:
         record = conversion["files"][stage + ".safetensors"]
-        if sha256(model / (stage + ".pt")) != record["source_sha256"]:
+        if pinned_checkpoint_sha256("cosyvoice", model / (stage + ".pt")) != record["source_sha256"]:
             raise ValueError(f"Original checkpoint hash mismatch: {stage}")
         if sha256(converted / (stage + ".safetensors")) != record["sha256"]:
             raise ValueError(f"Converted checkpoint hash mismatch: {stage}")
@@ -78,7 +79,7 @@ def run(output: Path, source: Path, model: Path | None, converted: Path | None,
                    "--prompt-features", str(features), "--output", str(directory)]
         command += ["--model", str(model)] if stage == "llm" else ["--weights", str(model / (stage + ".pt"))]
         with (directory / "reference.log").open("w") as log:
-            subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+            subprocess.run(model_command(command, offline), stdout=log, stderr=subprocess.STDOUT, check=True)
         example = stage + "_oracle"
         subprocess.run(["cargo", "build", "--release", "--locked", "-p", "tts-cosyvoice", "--example", example],
                        cwd=ROOT, check=True)
@@ -88,13 +89,14 @@ def run(output: Path, source: Path, model: Path | None, converted: Path | None,
             command += [str(directory / ("flow-noise.safetensors" if stage == "flow" else "source-noise.safetensors"))]
         command += [str(directory / "candidate.json")]
         with (directory / "candidate.log").open("w") as log:
-            subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+            subprocess.run(model_command(command, offline), stdout=log, stderr=subprocess.STDOUT, check=True)
         report = compare(directory / "reference.json", directory / "candidate.json", 1e-5, 1e-4)
         write_json(directory / "parity.json", report)
         reports[stage] = report
     report = {"schema_version": 1, "passed": all(value["passed"] for value in reports.values()),
               "device": "cpu", "scope": "separate pretrained stage gates; not full chained waveform parity",
               "components": reports, "requested_components": components,
+              "offline_reference": offline,
               "source_revision": PINS["cosyvoice"]["revision"], "input_sha256": sha256(features)}
     write_json(output / "parity.json", report)
     return report

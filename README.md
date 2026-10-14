@@ -30,6 +30,12 @@ scope, upstream revision, tolerances and errors. Component checks, full synthesi
 checks and voice quality are distinct; the support table below states which
 platforms have actually been exercised.
 
+Qwen's bounded CPU x-vector and ICL synthesis comparisons pass the strict tensor
+gate. CosyVoice's official-runtime language-model and HiFT stage comparisons also
+pass; its float32 flow and coupled acoustic path still fail the same elementwise
+threshold. The baseline records those failures alongside the official Python
+attention-kernel variation. Do not treat them as full CosyVoice waveform parity.
+
 ## What belongs where
 
 | Package | Responsibility |
