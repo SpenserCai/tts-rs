@@ -181,6 +181,15 @@ class GitHubPublicationTests(unittest.TestCase):
         self.assertEqual(self.sleep.call_args_list, [call(2), call(2)])
         self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["create", "upload", "upload", "edit"])
 
+    def test_candidate_never_becomes_the_latest_stable_release(self) -> None:
+        visible = {**self.document, "assets": self.assets}
+        with patch.object(release, "check_version", return_value="0.1.2-rc.1"), \
+             patch.object(plan, "release_document", side_effect=[None, self.document, visible]):
+            release.github_release("v0.1.2-rc.1", self.root, False)
+        for entry in (self.run.call_args_list[0], self.run.call_args_list[-1]):
+            self.assertIn("--prerelease", entry.args)
+            self.assertIn("--latest=false", entry.args)
+
     def test_new_draft_read_timeout_never_recreates_or_uploads(self) -> None:
         with patch.object(plan, "release_document", return_value=None) as read:
             with self.assertRaisesRegex(SystemExit, "not visible; re-run failed jobs"):

@@ -11,7 +11,14 @@ import subprocess
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-STABLE_VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
+RELEASE_VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-rc\.[1-9]\d*)?")
+
+
+def python_version(version: str) -> str:
+    """PEP 440 spelling of the same release candidate, not an independent version."""
+    if RELEASE_VERSION.fullmatch(version) is None:
+        raise ValueError("Expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.N")
+    return version.replace("-rc.", "rc")
 
 
 def workspace(root: Path = ROOT) -> dict:
@@ -31,8 +38,7 @@ def check(root: Path = ROOT) -> str:
     """Validate source and lockfiles without building or contacting a registry."""
     ws = workspace(root)
     version = ws["package"]["version"]
-    if STABLE_VERSION.fullmatch(version) is None:
-        raise ValueError("Release versions must use stable MAJOR.MINOR.PATCH across every registry")
+    python_version(version)
     members = packages(root)
     for name, package in members.items():
         if package.get("version") != {"workspace": True}:
@@ -59,8 +65,7 @@ def check(root: Path = ROOT) -> str:
 
 def set_version(version: str, root: Path = ROOT) -> None:
     """Update only release metadata; Cargo refreshes its own workspace lock entries."""
-    if STABLE_VERSION.fullmatch(version) is None:
-        raise ValueError("Expected a stable MAJOR.MINOR.PATCH version")
+    python_version(version)
     check(root)
     manifest = root / "Cargo.toml"
     source = manifest.read_text(encoding="utf-8")

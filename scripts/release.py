@@ -25,6 +25,7 @@ import zipfile
 
 from package_licenses import stage
 from version import check as check_version
+from version import python_version
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE = ROOT / "bindings/node"
@@ -228,7 +229,7 @@ def verify_distributions(directory: Path) -> None:
             if len(names) != 1:
                 raise SystemExit(f"Invalid wheel metadata: {path.name}")
             metadata = BytesParser().parsebytes(wheel.read(names[0]))
-        if metadata["Name"] != "candle-tts" or metadata["Version"] != version:
+        if metadata["Name"] != "candle-tts" or metadata["Version"] != python_version(version):
             raise SystemExit(f"Wheel version/name mismatch: {path.name}")
     npm_packages = {}
     for path in (directory / "npm").glob("*.tgz"):
@@ -259,6 +260,8 @@ def verify_distributions(directory: Path) -> None:
             stream = archive.extractfile(f"{path.stem}/.cargo_vcs_info.json")
             if stream is None or json.load(stream).get("git", {}).get("sha1") != commit:
                 raise SystemExit(f"Cargo archive source commit mismatch: {path.name}")
+    from accelerators import verify as verify_accelerators
+    verify_accelerators(directory / "accelerators", version, commit)
     print(f"Verified {len(expected_files)} release artifacts at unified version {version}")
 
 
@@ -291,7 +294,13 @@ def runtime_manifest(output: Path) -> None:
                 "validation": "See tests/fixtures/validation-baseline.json; an address-space probe does not establish full model parity",
             },
         ],
-        "accelerators": "CUDA and Metal require separate source builds and matching hardware",
+        "accelerators": {
+            "channel": "Build-verified preview assets in accelerators/; not published to PyPI/npm",
+            "matrix": ["cu118-linux-x64", "cu124-linux-x64", "cu128-linux-x64", "cu124-win32-x64", "metal-darwin-arm64"],
+            "gpu_execution_verified": False,
+            "runtime_bundled": False,
+            "requirements": "See docs/accelerators.md and each per-build JSON report",
+        },
         "cosyvoice_frontend": {
             "runtime": "ONNX Runtime",
             "minimum_c_api": 24,
@@ -332,13 +341,14 @@ def publish_npm(directory: Path) -> None:
                 raise SystemExit(f"npm already contains a different archive for {manifest['name']} {manifest['version']}")
             print(f"Already published, identical npm archive: {manifest['name']} {manifest['version']}")
             continue
-        run("npm", "publish", str(path.resolve()), "--ignore-scripts", "--access", "public")
+        run("npm", "publish", str(path.resolve()), "--ignore-scripts", "--access", "public",
+            "--tag", "next" if "-rc." in manifest["version"] else "latest")
 
 
 def prepare_pypi(directory: Path, output: Path) -> None:
     """Resume a partial PyPI upload only when existing files have identical hashes."""
     version = check_version()
-    document = registry_document(f"https://pypi.org/pypi/candle-tts/{version}/json")
+    document = registry_document(f"https://pypi.org/pypi/candle-tts/{python_version(version)}/json")
     existing = {item["filename"]: item for item in (document or {}).get("urls", [])}
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -418,8 +428,9 @@ def publish_github_assets(tag: str, files: list[Path], draft: bool) -> None:
         with tempfile.TemporaryDirectory(prefix="tts-release-notes-") as temporary:
             notes = Path(temporary) / "notes.md"
             notes.write_text(f"{completion_marker(commit)}\n<!-- {marker} -->\n", encoding="utf-8")
+            candidate = ("--prerelease", "--latest=false") if "-rc." in check_version() else ()
             run("gh", "release", "create", tag, "--draft", "--verify-tag", "--generate-notes",
-                "--notes-file", str(notes))
+                "--notes-file", str(notes), *candidate)
         # A successful write may briefly precede its visibility through the read API.
         # Only absence is retryable here; a visible conflicting release must fail.
         for attempt in range(3):
@@ -454,7 +465,8 @@ def publish_github_assets(tag: str, files: list[Path], draft: bool) -> None:
     else:
         raise SystemExit("GitHub release uploads are not fully visible; re-run failed jobs from this workflow run")
     if not draft and verified.get("draft"):
-        run("gh", "release", "edit", tag, "--draft=false")
+        candidate = ("--prerelease", "--latest=false") if "-rc." in check_version() else ()
+        run("gh", "release", "edit", tag, "--draft=false", *candidate)
     print(f"Verified GitHub {'draft' if draft else 'release'}: {tag}")
 
 
@@ -466,7 +478,7 @@ def test_wheel(directory: Path) -> None:
     run(sys.executable, str(ROOT / "bindings/python/tests/smoke.py"))
 
 
-def test_node_packages(directory: Path) -> None:
+def test_node_packages(directory: Path, accelerators: Path | None = None) -> None:
     """Exercise the packed facade and this host's optional dependency in a clean install."""
     node_os = {"Linux": "linux", "Darwin": "darwin", "Windows": "win32"}[platform.system()]
     node_cpu = "arm64" if platform.machine().lower() in {"arm64", "aarch64"} else "x64"
@@ -485,6 +497,15 @@ def test_node_packages(directory: Path) -> None:
             selected.append(path)
     if root_name is None or len(selected) != 2:
         raise SystemExit("Expected the root npm package and exactly one matching native package")
+    if accelerators is not None:
+        for path in accelerators.glob("*.tgz"):
+            with tarfile.open(path) as archive:
+                stream = archive.extractfile("package/package.json")
+                if stream is None:
+                    raise SystemExit("Missing accelerator npm manifest")
+                manifest = json.load(stream)
+            if node_os in manifest.get("os", []) and node_cpu in manifest.get("cpu", []):
+                selected.append(path)
     with tempfile.TemporaryDirectory(prefix="tts-package-") as temporary:
         prefix = Path(temporary)
         (prefix / "package.json").write_text('{"name":"package-smoke","private":true}\n', encoding="utf-8")
@@ -527,6 +548,7 @@ def main() -> None:
     wheel.add_argument("directory", type=Path)
     node_test = commands.add_parser("test-node")
     node_test.add_argument("directory", type=Path)
+    node_test.add_argument("--accelerators", type=Path)
     github = commands.add_parser("github")
     github.add_argument("--tag", default=os.getenv("RELEASE_TAG"))
     github.add_argument("--directory", type=Path, required=True)
@@ -555,7 +577,7 @@ def main() -> None:
     elif args.command == "test-wheel":
         test_wheel(args.directory)
     elif args.command == "test-node":
-        test_node_packages(args.directory)
+        test_node_packages(args.directory, args.accelerators)
     else:
         github_release(args.tag or f"v{check_version()}", args.directory, args.draft)
 
