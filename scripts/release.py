@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
 import urllib.error
 import urllib.parse
@@ -397,6 +398,19 @@ def publish_github_assets(tag: str, files: list[Path], draft: bool) -> None:
     expected = {path.name: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     if len(expected) != len(files):
         raise SystemExit("GitHub release asset names must be unique")
+
+    def validated_assets(document: dict) -> dict[str, str]:
+        body = document.get("body") or ""
+        if completion_marker(commit) not in body or marker not in body:
+            raise SystemExit("Existing GitHub release belongs to different sources or workflow run")
+        assets = document.get("assets", [])
+        uploaded = {asset["name"]: asset.get("digest") for asset in assets}
+        if len(uploaded) != len(assets) or any(
+            name not in expected or expected[name] != digest for name, digest in uploaded.items()
+        ):
+            raise SystemExit("GitHub release already contains unexpected or different assets")
+        return uploaded
+
     document = release_document(tag)
     if document is None:
         # Keep the release invisible until every upload is verified. An interrupted
@@ -406,21 +420,39 @@ def publish_github_assets(tag: str, files: list[Path], draft: bool) -> None:
             notes.write_text(f"{completion_marker(commit)}\n<!-- {marker} -->\n", encoding="utf-8")
             run("gh", "release", "create", tag, "--draft", "--verify-tag", "--generate-notes",
                 "--notes-file", str(notes))
-        document = release_document(tag)
-    body = (document or {}).get("body") or ""
-    if completion_marker(commit) not in body or marker not in body:
-        raise SystemExit("Existing GitHub release belongs to different sources or workflow run")
-    uploaded = {asset["name"]: asset.get("digest") for asset in document.get("assets", [])}
-    if any(name not in expected or expected[name] != digest for name, digest in uploaded.items()):
-        raise SystemExit("GitHub release already contains unexpected or different assets")
+        # A successful write may briefly precede its visibility through the read API.
+        # Only absence is retryable here; a visible conflicting release must fail.
+        for attempt in range(3):
+            if attempt:
+                print("Waiting 2 seconds for the newly created GitHub release", flush=True)
+                time.sleep(2)
+            document = release_document(tag)
+            if document is not None:
+                break
+        else:
+            raise SystemExit("New GitHub release is not visible; re-run failed jobs from this workflow run")
+    uploaded = validated_assets(document)
     missing = [path for path in files if path.name not in uploaded]
     if missing and not document.get("draft"):
         raise SystemExit("A published GitHub release is incomplete; refusing to modify it")
     for path in missing:
         run("gh", "release", "upload", tag, str(path))
-    verified = release_document(tag)
-    if not verified or {asset["name"]: asset.get("digest") for asset in verified.get("assets", [])} != expected:
-        raise SystemExit("GitHub release asset inventory or digests differ from verified distributions")
+    for attempt in range(3):
+        if attempt:
+            print("Waiting 2 seconds for GitHub release uploads to become visible", flush=True)
+            time.sleep(2)
+        verified = release_document(tag)
+        if verified is None:
+            raise SystemExit("GitHub release disappeared while verifying uploaded assets")
+        uploaded = validated_assets(verified)
+        if uploaded == expected:
+            break
+        # Retry only a valid subset after our own uploads. Never repair or wait on
+        # an incomplete public release, and never overlook ownership/digest conflicts.
+        if not missing or not verified.get("draft"):
+            raise SystemExit("GitHub release asset inventory is incomplete; refusing to modify it")
+    else:
+        raise SystemExit("GitHub release uploads are not fully visible; re-run failed jobs from this workflow run")
     if not draft and verified.get("draft"):
         run("gh", "release", "edit", tag, "--draft=false")
     print(f"Verified GitHub {'draft' if draft else 'release'}: {tag}")

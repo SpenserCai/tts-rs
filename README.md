@@ -4,9 +4,15 @@
 
 **Local voices. Explicit models. One Rust interface.**
 
+[![crates.io](https://img.shields.io/crates/v/candle-tts?logo=rust)](https://crates.io/crates/candle-tts)
+[![PyPI](https://img.shields.io/pypi/v/candle-tts?logo=python)](https://pypi.org/project/candle-tts/)
+[![Node.js](https://img.shields.io/npm/v/%40spensercai%2Ftts-rs?logo=npm&label=Node.js)](https://www.npmjs.com/package/@spensercai/tts-rs)
+[![WASM32](https://img.shields.io/npm/v/%40spensercai%2Ftts-wasm?label=WASM32)](https://www.npmjs.com/package/@spensercai/tts-wasm)
+[![WASM64](https://img.shields.io/npm/v/%40spensercai%2Ftts-wasm64?label=WASM64)](https://www.npmjs.com/package/@spensercai/tts-wasm64)
+
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-DEA584?logo=rust)](Cargo.toml)
 [![Candle](https://img.shields.io/badge/inference-Candle-FFD21E)](https://github.com/huggingface/candle)
-[![Manual CI](https://img.shields.io/badge/CI-manual_dispatch-2563EB)](.github/workflows/ci.yml)
+[![Release](https://github.com/SpenserCai/tts-rs/actions/workflows/release.yml/badge.svg)](https://github.com/SpenserCai/tts-rs/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-MIT-22C55E)](LICENSE)
 
 Qwen3-TTS · CosyVoice3 · Python · Node.js · WebAssembly
@@ -157,8 +163,8 @@ at once. CUDA/Metal parity must be measured on that hardware.
 | Target | Implemented boundary | Validation boundary |
 | --- | --- | --- |
 | Linux x64 CPU | Both native model pipelines; Python and Node | Local build, package smoke and scoped model comparisons |
-| Windows x64 CPU | Native Rust / Python / Node build configuration | Manual matrix; requires a Windows run |
-| macOS ARM CPU / Metal | Native build configuration and explicit Metal feature | Manual matrix; numerical GPU checks require hardware |
+| Windows x64 CPU | Native Rust / Python / Node | Release wheel/addon builds and final package installation smoke tests |
+| macOS ARM CPU / Metal | Native packages and explicit Metal feature | CPU release wheel/addon builds and package installation smoke tests; Metal numerical checks remain unverified |
 | Linux CUDA | Explicit native feature | Opt-in CUDA runner; not certified by CPU tests |
 | WASM32 | Audio utilities and Qwen speaker extraction | Real speaker-weight CPU comparison |
 | WASM64 | Memory64 Qwen synthesis with explicit model bytes | Node 24 full bounded Qwen waveform parity; real JS/Rust transfer above 4 GiB |
