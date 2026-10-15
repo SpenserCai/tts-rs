@@ -141,6 +141,15 @@ a missing operator or justify a parity claim. A projection experiment that
 reproduced the pinned MKL reduction on frozen inputs was removed because it
 added substantial cost without stable complete-model gains.
 
+A later isolated experiment used standard MKL 2022.2 SGEMM with the pinned
+Python Linear's bias/flattening semantics. Although frozen conditioning and
+Q/K/V projections matched bit-for-bit, the complete 8+8 case still failed:
+12 / 1,280 values, maximum error `5.779e-4`, RMSE `8.724e-5`. Smaller maximum
+error and RMSE did not imply strict success. That experimental backend is not
+part of the library. Frozen attention checks likewise ruled out changing AV
+normalization order as a sufficient repair. Keep these operator-level and
+composed-model conclusions separate when evaluating another backend.
+
 Use `export_cosyvoice_flow.py --layerwise` and `flow_oracle ... --layerwise` for
 first-step layer traces. Use `--block-trace INDEX` with the exporter and
 `flow_block_oracle` for independent frozen operator inputs; reproduction commands
@@ -211,6 +220,44 @@ Compare intermediates in order: frontend features → speaker/conditioning → L
 logits or fixed codes → acoustic decoder → waveform. This distinguishes a token
 boundary error from a numeric kernel difference. A waveform test from one short
 utterance does not certify every language, model size, sampling mode or stream.
+
+## Separate speech-quality audits
+
+The official [CV3-Eval protocol](https://github.com/QwenAudio/CV3-Eval/tree/68b7682a410d048308d1a12f2fbc266770cd23d5)
+measures content consistency with CER/WER, speaker similarity with ERes2Net,
+and audio quality with DNSMOS. Its specified ASR models are Paraformer for
+Chinese and Whisper large-v3 for English. These measure different properties
+from tensor parity; none provides a cross-backend floating-point tolerance or
+turns a failed numerical comparison into a passing one.
+
+The pinned official [`export_onnx.py`](https://github.com/QwenAudio/CosyVoice/blob/074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc/cosyvoice/bin/export_onnx.py)
+does perform a local numerical check: ten randomly sized single-estimator
+inputs use `atol=1e-4, rtol=1e-2`. That export check does not cover the complete
+Euler solver, HiFT or final waveform. It is a separate scope and does not replace
+this port's recorded full-Flow comparison contract.
+
+For a separate paired audit, freeze the public sample manifest, reference
+transcripts, text normalization, model/evaluator revisions, weight hashes and
+decoding settings before generating either implementation's output. First
+compare acoustic decoding with identical speech tokens and actual noise; then
+evaluate the complete synthesis pipelines. Record per-sample scores for both
+implementations, their paired differences and the sample counts. Missing output,
+an evaluator exception or a missing score must fail the requested audit rather
+than silently shrink its denominator.
+
+Preserve the evaluator's primary aggregation; filtered or clipped error rates
+are additional diagnostics. Speech-quality samples must reach a natural end of
+utterance. A token-capped numerical fixture or a short analytic waveform is not
+a quality sample. Greedy decoding is useful for port diagnosis but differs from
+the official default sampling configuration and must be labeled accordingly.
+
+Use an independent speaker evaluator rather than the conditioning encoder alone.
+Do not call a short transcription smoke check the full official benchmark, or
+treat one short utterance as statistical evidence of equal quality. Thresholds,
+sample coverage and any non-inferiority margin need an explicit justification
+before inspecting candidate scores. Quality evaluation supplements the existing
+strict gate; it does not relax it. No complete CV3-Eval quality audit is claimed
+by the numerical records above.
 
 ## Benchmarking
 
