@@ -77,8 +77,10 @@ tag; never independently bump a binding or silently reuse a published version.
 Use `python scripts/version.py set X.Y.Z` for a release update and commit its
 manifest and lockfile changes together. Run `python scripts/version.py check`
 locally and in CI. The version command does not tag, merge, dispatch or publish.
-The initial release remains 0.1.0 until released; subsequent changes follow
-Semantic Versioning, with breaking changes before 1.0 incrementing the minor.
+After the initial 0.1.0 release, changes follow Semantic Versioning: bug fixes
+increment the patch; breaking changes before 1.0 increment the minor. Numerical
+bug fixes may change seeded synthesis output; disclose this without claiming
+cross-version or cross-framework RNG equivalence.
 
 Release runs after a PR is merged into `main`. Its `push` event is only a signal:
 the lightweight planner must verify the exact triggering SHA against GitHub's PR

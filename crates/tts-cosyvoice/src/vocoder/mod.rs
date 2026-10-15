@@ -9,6 +9,7 @@
 pub mod f0_predictor;
 pub mod hift_generator;
 pub mod istft;
+mod phase;
 pub mod source_module;
 pub mod stft;
 

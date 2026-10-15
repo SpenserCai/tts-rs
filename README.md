@@ -44,19 +44,22 @@ platforms have actually been exercised.
 
 Both native pipelines implement reference conditioning and speech synthesis.
 Qwen's bounded CPU x-vector and ICL comparisons pass the strict tensor gate.
-CosyVoice's scoped frontend, language-model and HiFT comparisons pass. Strict
+CosyVoice's bounded frontend, language-model and short HiFT comparisons pass. Strict
 full-Flow parity remains unresolved: three of four latest analytic cases still
 fail the unchanged tolerance, and improvements are not uniform across inputs.
 See [numerical validation](docs/validation.md) for the tested boundaries; complete
 CosyVoice waveform equivalence is not claimed.
 
-**CosyVoice3 is experimental in this release.** Reported listening issues include
-an unrelated sound at the beginning of an utterance and an elongated ending.
-These artifacts and the remaining full-Flow numerical differences are under
-investigation. Successful synthesis or a correct transcription does not imply
-that voice quality or complete waveform parity has been verified. Evaluate
-CosyVoice3 output for the intended use; the current release retains the measured
-failures and does not relax their tolerances.
+**CosyVoice3 remains experimental.** Version 0.1.1 fixes categorical-sampling
+rounding that could select a zero-probability token, and improves CPU float32
+HiFT phase arithmetic. Fixed-seed output may change because the sampling bug is
+corrected. A longer same-input HiFT control improves from 47.45 to 101.08 dB error
+SNR, but still fails the strict waveform threshold at 38 of 100,800 values.
+See the [0.1.1 numerical regression](docs/validation.md#cosyvoice-011-numerical-regression).
+These corrections do not establish that reported leading sounds or elongated
+endings are eliminated. Evaluate the output for the intended use; full-Flow
+differences and listening quality remain separate from the passing component
+checks, and no numerical tolerance has been relaxed.
 
 ## What belongs where
 
