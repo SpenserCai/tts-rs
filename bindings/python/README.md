@@ -5,6 +5,11 @@ voice extraction, synthesis, and resampling release the Python interpreter lock.
 Concurrent operations on one `Engine` are serialized; create separate engines when
 independent inference state is needed.
 
+CosyVoice3 is experimental: full-Flow numerical parity remains unresolved, and
+reported output artifacts include an unrelated leading sound and elongated
+endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#tts-rs)
+before using that model. The binding uses the same model implementation as Rust.
+
 ```sh
 python -m pip install candle-tts
 ```

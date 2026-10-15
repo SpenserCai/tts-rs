@@ -24,10 +24,11 @@ Models run locally, and model weights and recordings stay outside the packages.
 Choose a model and runtime from the support matrix below; numerical evidence is
 recorded per component and device.
 
-The initial registry release is pending. The installation examples below use the
-intended package names; until publication completes, use the source-build commands
-in the [Python](bindings/python/README.md), [Node](bindings/node/README.md) and
-[WASM](bindings/wasm/README.md) guides, or build the Rust workspace locally.
+Package names and installation commands are listed below. Published versions and
+downloadable distributions are listed on the
+[Releases page](https://github.com/SpenserCai/tts-rs/releases). Source-build commands
+are available in the [Python](bindings/python/README.md),
+[Node](bindings/node/README.md) and [WASM](bindings/wasm/README.md) guides.
 
 Measured CPU comparisons are recorded in the
 [validation baseline](tests/fixtures/validation-baseline.json), with the exact
@@ -42,6 +43,14 @@ full-Flow parity remains unresolved: three of four latest analytic cases still
 fail the unchanged tolerance, and improvements are not uniform across inputs.
 See [numerical validation](docs/validation.md) for the tested boundaries; complete
 CosyVoice waveform equivalence is not claimed.
+
+**CosyVoice3 is experimental in this release.** Reported listening issues include
+an unrelated sound at the beginning of an utterance and an elongated ending.
+These artifacts and the remaining full-Flow numerical differences are under
+investigation. Successful synthesis or a correct transcription does not imply
+that voice quality or complete waveform parity has been verified. Evaluate
+CosyVoice3 output for the intended use; the current release retains the measured
+failures and does not relax their tolerances.
 
 ## What belongs where
 
