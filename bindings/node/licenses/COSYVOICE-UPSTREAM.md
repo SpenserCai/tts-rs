@@ -84,6 +84,25 @@ also apply to this local grid construction.
 
 ## Validation boundary
 
+HiFT source phase uses model-local CPU float32 primitives in `src/vocoder/phase.rs`.
+They preserve true division (rather than multiplication by a rounded reciprocal)
+and the pinned PyTorch CPU cumsum's float64 accumulator with float32 output at
+each step. The reviewed PyTorch files are `aten/src/ATen/native/cpu/BinaryOpsKernel.cpp`,
+`ReduceOpsKernel.cpp`, and `aten/src/ATen/AccumulateType.h` at the revision above;
+the existing PyTorch attribution and license also cover this scan adaptation.
+This avoids Candle 0.9.2's scalar reciprocal multiplication and triangular-matmul
+cumsum without changing Candle. Other dtypes/devices retain their existing paths,
+without hidden device transfers. `scripts/reference/export_cosyvoice_phase.py`
+regenerates the small authored bit-pattern fixtures from the pinned runtime.
+
+CosyVoice's top-p cutoff and RAS rejection policy retain their upstream semantics.
+Categorical selection accumulates float32 weights in float64 and scales the
+uniform draw by their actual mass. A rounding fallback can only select a positive
+weight, never a masked vocabulary-tail stop token. This corrects the former
+float32 inverse-CDF implementation; it does not reproduce `torch.multinomial`'s
+RNG algorithm. Fixed seeds can therefore produce different utterances across
+versions or frameworks even with equivalent probability distributions.
+
 Component tests and compilation do not establish pretrained synthesis parity.
 Use the Python reference suite with identical weights, token IDs, precision, flow
 noise and vocoder noise. Compare intermediates before comparing waveforms. The

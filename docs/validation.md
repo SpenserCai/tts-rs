@@ -191,6 +191,44 @@ demonstrates sensitivity to arithmetic order, not equivalence or an exemption
 from the candidate's failing gate. Earlier coupled metrics belong to different
 input hashes and are retained only in the historical diagnosis.
 
+## CosyVoice 0.1.1 numerical regression
+
+The [0.1.1 regression record](../tests/fixtures/cosyvoice-0.1.1-regression.json)
+separates two model-local corrections from the unresolved Flow measurements
+above. All CPU comparisons retain `atol=1e-5, rtol=1e-4`.
+
+- Categorical sampling now uses a float64 CDF and the actual weight sum. The
+  zero-mass vocabulary-tail regression, masked weights, small tails, invalid
+  distributions and half-open uniform boundaries run without model downloads.
+  Top-p candidate selection and RAS rejection policy are unchanged. Neither
+  seeded backward identity nor `torch.multinomial` RNG identity is promised.
+- CPU float32 source division and phase scans match pinned PyTorch bit-pattern
+  fixtures, including strided tensors and nonzero storage offsets. Regenerate
+  these authored fixtures with `export_cosyvoice_phase.py --output PATH` inside
+  the pinned CosyVoice environment and `offline_exec.py` boundary.
+- A 210-frame fixed-mel control replays the exact same phase/sine/UV tensors.
+  Official Python re-execution matches the earlier oracle bit for bit. Source
+  error falls from `7.729e-5` to `7.451e-9` (zero failing source values). Waveform
+  RMSE falls from `5.878e-4` to `1.224e-6`; error SNR rises from 47.45 to 101.08 dB.
+  **Waveform parity still fails:** 38 / 100,800 values exceed the unchanged gate.
+  The first and last 0.5 seconds pass, but this is not evidence that semantic
+  leading sounds or elongated endings have been removed.
+
+The longer control uses private conditioning and publishes only scalar metrics
+and digests, never audio, voice features or token traces. Reproduction requires
+the retained private inputs. Ordinary CI uses the separate authored operation
+fixtures. Accelerator arithmetic and full-Flow semantics are unchanged; this
+record does not claim CUDA/Metal parity or a perceptual quality score.
+
+All four existing analytic Flow controls were rerun: their inputs, official
+outputs and Rust outputs are bitwise unchanged from the previous baseline
+(including its three strict failures). The short 15,360-sample HiFT gate and
+DiT conditioning module comparisons still pass. Five predetermined complete
+text-to-waveform requests returned finite audio without hitting token budgets;
+this smoke test is not a listening-quality assessment. Linux native/binding
+checks and WASM32/Memory64 checks pass; Qwen pretrained waveform and accelerator
+model validation were not rerun for this model-local patch.
+
 ## Strict comparisons
 
 ```sh

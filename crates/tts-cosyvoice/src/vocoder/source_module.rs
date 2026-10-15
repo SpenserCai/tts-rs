@@ -134,7 +134,7 @@ impl SineGen2 {
         // Calculate normalized frequency with modulo 1 (matching Python: % 1)
         // This prevents phase accumulation issues
         // Implement x % 1.0 as x - floor(x)
-        let rad_values_raw = (fn_mat / self.sampling_rate as f64)?;
+        let rad_values_raw = super::phase::divide_frequency(&fn_mat, self.sampling_rate)?;
         let rad_values = (&rad_values_raw - rad_values_raw.floor()?)?;
 
         // === KEY OPTIMIZATION: Downsample before cumsum, upsample after ===
@@ -163,8 +163,8 @@ impl SineGen2 {
         let rad_values_down = self.downsample_linear(&rad_values_transposed, downsampled_len)?;
         let rad_values_down = rad_values_down.transpose(1, 2)?; // [B, T_down, H]
 
-        // Compute cumsum on the smaller tensor (this is the expensive operation)
-        let phase_down = ((rad_values_down.cumsum(1)? * 2.0)? * PI)?;
+        // Preserve the reference CPU scan's accumulator and output rounding.
+        let phase_down = ((super::phase::accumulate_phase(&rad_values_down)? * 2.0)? * PI)?;
 
         // Upsample phase back to original length
         // Multiply by upsample_scale to maintain correct phase progression

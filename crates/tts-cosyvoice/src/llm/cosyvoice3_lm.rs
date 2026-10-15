@@ -598,22 +598,14 @@ impl CosyVoice3LM {
         let probs_vec: Vec<f32> = probs.flatten_all()?.to_vec1()?;
 
         let random_val: f32 = self.rng.borrow_mut().random();
-        let mut cumulative = 0.0f32;
-        for (idx, &prob) in probs_vec.iter().enumerate() {
-            cumulative += prob;
-            if random_val < cumulative {
-                return Ok(idx as u32);
-            }
-        }
-
-        // Fallback to last token
-        Ok((probs_vec.len() - 1) as u32)
+        Ok(super::sampling::categorical(&probs_vec, random_val)? as u32)
     }
 
     /// Nucleus sampling implementation matching Python's cosyvoice.utils.common.nucleus_sampling
     fn nucleus_sampling(&self, logits: &Tensor, top_k: usize, top_p: f32) -> Result<u32> {
         let probs = candle_nn::ops::softmax_last_dim(logits)?;
         let probs_vec: Vec<f32> = probs.flatten_all()?.to_vec1()?;
+        super::sampling::probability_mass(&probs_vec)?;
         let top_k = if top_k == 0 { probs_vec.len() } else { top_k };
 
         // Sort by probability descending
@@ -638,25 +630,12 @@ impl CosyVoice3LM {
             return Ok(indexed.first().map(|(i, _)| *i as u32).unwrap_or(0));
         }
 
-        // Normalize probabilities for sampling
-        let total_prob: f32 = candidates.iter().map(|(_, p)| p).sum();
-        let normalized: Vec<(usize, f32)> = candidates
-            .iter()
-            .map(|(i, p)| (*i, p / total_prob))
-            .collect();
-
-        // Multinomial sampling
+        // Preserve the official float32 top-p cutoff, but sample the retained
+        // weights without another float32 normalization/CDF rounding stage.
+        let weights: Vec<f32> = candidates.iter().map(|(_, p)| *p).collect();
         let random_val: f32 = self.rng.borrow_mut().random();
-        let mut cumulative = 0.0f32;
-        for (idx, prob) in normalized.iter() {
-            cumulative += prob;
-            if random_val < cumulative {
-                return Ok(*idx as u32);
-            }
-        }
-
-        // Fallback to last candidate
-        Ok(candidates.last().map(|(i, _)| *i as u32).unwrap_or(0))
+        let index = super::sampling::categorical(&weights, random_val)?;
+        Ok(candidates[index].0 as u32)
     }
 
     fn apply_repetition_penalty(

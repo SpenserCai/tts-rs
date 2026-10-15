@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-15",
+  "version": "0.1.1",
+  "implementation_commit": "8de7f93dacebecaea5b732eb13aa594fb8e14279",
+  "scope": "CPU float32 sampler and source-phase corrections; not full-pipeline, corpus, perceptual or accelerator certification",
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "device": "cpu",
+  "dtype": "float32",
+  "f0_dtype": "float64",
+  "upstream": {
+    "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+    "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+    "weights_sha256": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65",
+    "runtime": {
+      "torch": "2.3.1+cpu",
+      "torchaudio": "2.3.1+cpu",
+      "transformers": "4.51.3",
+      "x-transformers": "2.11.24"
+    }
+  },
+  "private_control": {
+    "input_sha256": "860f4b8f0355a755b4165c428a1d71acc13719dac657177fdff21a65862af716",
+    "source_noise_sha256": "e7fdb53e06c1289e23814336e9c9c96e02ab2db5de50f71b9eedf55d1c0fe44d",
+    "reference_sha256": "ce03f39d37c33e4e9103e72a6936e3bfcdd46b6d865b9d3721515af4bab15663",
+    "before_sha256": "5513e13a6fafab05bae8954fe8967eee34b349edab7921a58a4284eefd5f0743",
+    "after_sha256": "356cdb00f275c574876d723eaba9716c5ac4ba8fb628941b684097890d43ce87",
+    "official_replay_bitwise_equal": true,
+    "frames": 210,
+    "sample_rate": 24000,
+    "input_policy": "Only metrics and digests are public. Reproduction requires retained private tensors; no voice data is checked in.",
+    "source_before": {
+      "passed": false,
+      "elements": 100800,
+      "failing_elements": 30240,
+      "max_absolute_error": 7.72940693423152e-05,
+      "root_mean_square_error": 1.6630712038105386e-05,
+      "snr_db": 62.090385817915504
+    },
+    "source_after": {
+      "passed": true,
+      "elements": 100800,
+      "failing_elements": 0,
+      "max_absolute_error": 7.450580596923828e-09,
+      "root_mean_square_error": 1.0489222715380515e-09,
+      "snr_db": 146.09373655779638
+    },
+    "waveform_before": {
+      "passed": false,
+      "elements": 100800,
+      "failing_elements": 32268,
+      "max_absolute_error": 0.015593409538269043,
+      "root_mean_square_error": 0.0005877688578092925,
+      "snr_db": 47.45308036574742
+    },
+    "waveform_after": {
+      "passed": false,
+      "elements": 100800,
+      "failing_elements": 38,
+      "max_absolute_error": 2.7939677238464355e-05,
+      "root_mean_square_error": 1.224134728249928e-06,
+      "snr_db": 101.08062742409098
+    },
+    "leading_half_second_after": {
+      "passed": true,
+      "elements": 12000,
+      "failing_elements": 0,
+      "max_absolute_error": 3.725290298461914e-06,
+      "root_mean_square_error": 1.386577411672308e-07,
+      "snr_db": 104.45108696850568
+    },
+    "trailing_half_second_after": {
+      "passed": true,
+      "elements": 12000,
+      "failing_elements": 0,
+      "max_absolute_error": 8.419156074523926e-06,
+      "root_mean_square_error": 5.645402442516573e-07,
+      "snr_db": 99.98456791942587
+    }
+  },
+  "sampling": {
+    "regression": "100 equal positive weights, one RAS rejection, and a masked vocabulary tail; largest legal float32 uniform",
+    "before": "Float32 CDF can fall below the draw and return zero-weight token 6760",
+    "after": "Float64 CDF scaled by actual mass returns supported token 100",
+    "observed_frozen_control": "Four saved cached/full-context distributions select the same supported token after the correction; raw private logits/probabilities are not published",
+    "limitation": "This does not establish identity to torch.multinomial RNG or prove the cause of a perceptual artifact"
+  },
+  "public_regressions": [
+    "llm/sampling.rs unit tests",
+    "vocoder/phase.rs bit-pattern, strided-view and storage-offset tests"
+  ],
+  "unchanged_flow_controls": [
+    {
+      "name": "8+8",
+      "bitwise_unchanged_from_baseline": true,
+      "hashes": {
+        "input": "078fc6b6d1402b3ce2a72df573741a56e81df39bc4b6dbaed30e289c67167c73",
+        "reference": "06b2b61a746e0a0130ce1957092e816eacc38c875a086b19f9274fb50326f9d2",
+        "candidate": "81089226728b115e52b0cf729e4526b288d7fc67cd03a8b2e0878b8e4b2f721c"
+      },
+      "strict_passed": false
+    },
+    {
+      "name": "4+4",
+      "bitwise_unchanged_from_baseline": true,
+      "hashes": {
+        "input": "1d25f34fedc6f47e156cc77d63d438758cf878af4ae425bdb1f2fd63b6d9c6e1",
+        "reference": "901b435a282c555954d740af8e986a1f2eed4981ddde6e743ca41eaf00ecf36a",
+        "candidate": "ed35388d1217ad2b8e8ad13150933d81d7373a3c36b26a688f695cc013240489"
+      },
+      "strict_passed": false
+    },
+    {
+      "name": "5+11",
+      "bitwise_unchanged_from_baseline": true,
+      "hashes": {
+        "input": "88b4bd30fd3cc8b32e336e9e2f480dc3a890b278d83c478b43fc6d0383b29b9a",
+        "reference": "907a77172bf158c99af58f306ebf2009aa17658d6659631f18bec77972117d07",
+        "candidate": "80170ec9b856c15531e4f7c480d4d7b8a6f763817548a981029e300dd8d75b5b"
+      },
+      "strict_passed": false
+    },
+    {
+      "name": "1+1",
+      "bitwise_unchanged_from_baseline": true,
+      "hashes": {
+        "input": "fb0942f7915aaecf6028adeb510bd933df5d80cafddb798f539dbb0b2cc62ec7",
+        "reference": "5d4a3449f73bff1be4b25f46767896ed42430363d6a18a605856659072f4f302",
+        "candidate": "749af2eb7fb1fb4616a1db95e24068f8c4840641e8e15af6414174548b75fa1c"
+      },
+      "strict_passed": true
+    }
+  ],
+  "short_hift": {
+    "passed": true,
+    "elements": 15360,
+    "max_absolute_error": 9.5367431640625e-07,
+    "mean_absolute_error": 9.592496343913127e-08,
+    "root_mean_square_error": 1.2891602154912454e-07,
+    "max_relative_error": 0.06696428571428571,
+    "cosine_similarity": 0.9999999999528125,
+    "failing_elements": 0,
+    "first_failing_indices": [],
+    "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)",
+    "reference_rms": 0.013266906760980135,
+    "reference_peak": 0.07480468600988388,
+    "identical_waveform": false,
+    "snr_db": 100.24925565159337
+  },
+  "conditioning_modules_passed": true,
+  "local_regression": {
+    "platform": "Linux x86_64 CPU; Rust 1.99.0; Node 24.19.0; Python 3.12",
+    "rust": "scripts/ci.py rust passed: fmt, feature builds, strict Clippy, 237 tests + 4 doc tests, strict rustdoc",
+    "scripts": "32 Python maintenance tests passed",
+    "python_binding": "Built and installed 0.1.1 wheel; 6 tests passed",
+    "node_binding": "Built native 0.1.1 module; 6 tests passed",
+    "wasm32": "Default and Qwen component builds, strict Clippy, Node smoke tests and web package passed",
+    "wasm64": "Build, strict Clippy/rustdoc and 7 tests passed, including actual transfer across 4 GiB",
+    "full_synthesis": "All five predetermined text/seed requests returned finite complete audio, below token budgets; no subjective pass claim",
+    "exclusions": "No Qwen pretrained waveform rerun or CUDA/Metal model execution in this patch; model code is unchanged"
+  },
+  "unchanged_limits": [
+    "Full Flow parity remains unresolved",
+    "Complete long-control waveform gate still fails",
+    "No accelerator or subjective quality certification"
+  ]
+}
