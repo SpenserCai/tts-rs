@@ -43,6 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: rust-${{ matrix.device }}
+      - name: Install the pinned CPU runtime for frontend regression tests
+        run: python scripts/install_onnxruntime.py --output .cache/onnxruntime --github-env
       - name: Zero-warning Rust checks
         env:
           TTS_DEVICE: ${{ matrix.device }}

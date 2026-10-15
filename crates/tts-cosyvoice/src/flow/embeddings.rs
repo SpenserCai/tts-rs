@@ -8,6 +8,7 @@
 use candle::{D, DType, Device, Module, Result, Tensor};
 use candle_nn::{Conv1d, Conv1dConfig, Linear, VarBuilder};
 
+use super::normalization::layer_norm_no_affine;
 use crate::activations::{Mish, Swish};
 
 /// Sinusoidal timestep embedding
@@ -135,16 +136,6 @@ impl AdaLayerNormZero {
 
         Ok((x_modulated, gate_msa, shift_mlp, scale_mlp, gate_mlp))
     }
-}
-
-/// LayerNorm without learnable parameters (elementwise_affine=False)
-fn layer_norm_no_affine(x: &Tensor) -> Result<Tensor> {
-    let (_batch, _seq, _dim) = x.dims3()?;
-    let mean = x.mean_keepdim(D::Minus1)?;
-    let x_centered = x.broadcast_sub(&mean)?;
-    let var = x_centered.sqr()?.mean_keepdim(D::Minus1)?;
-    let std = (var + 1e-6)?.sqrt()?;
-    x_centered.broadcast_div(&std)
 }
 
 /// Final adaptive layer norm

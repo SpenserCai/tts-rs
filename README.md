@@ -24,6 +24,11 @@ Models run locally, and model weights and recordings stay outside the packages.
 Choose a model and runtime from the support matrix below; numerical evidence is
 recorded per component and device.
 
+The initial registry release is pending. The installation examples below use the
+intended package names; until publication completes, use the source-build commands
+in the [Python](bindings/python/README.md), [Node](bindings/node/README.md) and
+[WASM](bindings/wasm/README.md) guides, or build the Rust workspace locally.
+
 Measured CPU comparisons are recorded in the
 [validation baseline](tests/fixtures/validation-baseline.json), with the exact
 scope, upstream revision, tolerances and errors. Component checks, full synthesis
@@ -32,9 +37,9 @@ platforms have actually been exercised.
 
 Both native pipelines implement reference conditioning and speech synthesis.
 Qwen's bounded CPU x-vector and ICL comparisons pass the strict tensor gate.
-CosyVoice's official-runtime language-model and HiFT comparisons pass; Flow's
-strict float32 agreement depends on the test input, with remaining differences
-recorded alongside variation between the official Python attention kernels.
+CosyVoice's scoped frontend, language-model and HiFT comparisons pass. Strict
+full-Flow parity remains unresolved: three of four latest analytic cases still
+fail the unchanged tolerance, and improvements are not uniform across inputs.
 See [numerical validation](docs/validation.md) for the tested boundaries; complete
 CosyVoice waveform equivalence is not claimed.
 
@@ -166,7 +171,12 @@ intermediate tensors, checks finite values and shapes, and compares them with
 Candle. Stochastic waveform identity is not inferred from equal random seeds.
 See [validation commands and boundaries](docs/validation.md).
 
-## Development and manual workflows
+## Development and releases
+
+For native tests, first run `python scripts/install_onnxruntime.py` (Python 3.12+)
+and set `ORT_DYLIB_PATH` to the library path it reports. This verified external
+runtime also runs the small CosyVoice frontend operator regression; no model
+weights are needed for the ordinary Rust gate.
 
 ```sh
 python scripts/ci.py rust
@@ -189,21 +199,37 @@ extracting reference conditioning; the Candle synthesis models remain native Rus
 | Manual CI | Cheap Linux gate, optional Windows x64 / Linux x64 / macOS ARM matrix |
 | Benchmark | Criterion audio benchmarks and machine metadata |
 | Model evaluation | Tensor parity, Qwen CPU waveform E2E, component timings and opt-in resident Qwen TTS benchmark |
-| Release | Build and test artifacts; dry run by default; opt-in draft or registry publish |
+| Release | Publish a new unified version after a verified PR merge; manual artifact builds and publication |
 
-Every workflow uses `workflow_dispatch`. Heavy model jobs and accelerator runners
-are opt-in. All distributions share the Cargo workspace version. Use
-`python scripts/version.py set X.Y.Z` to update release metadata together.
+CI, benchmarks and model evaluation use `workflow_dispatch`. Heavy model jobs and
+accelerator runners remain opt-in. All distributions share the Cargo workspace
+version. Use `python scripts/version.py set X.Y.Z` to update release metadata
+together before merging a release change.
 
-To release, merge the verified commit, create its matching `vX.Y.Z` tag, then run
-**Manual release** on that tag with `destination=registries`. The workflow builds
-and tests Windows x64, Linux x64 and macOS ARM wheels and Node addons, validates
-the distribution inventory and checksums, publishes through the configured
-`CARGO_REGISTRY_TOKEN`, `PYPI_API_TOKEN` and `NPM_TOKEN` secrets, and creates the
-GitHub release only after all registry jobs succeed. `destination=artifacts`
-performs the same package checks without publishing; `github-draft` creates a
-reviewable GitHub draft. See [maintenance requirements](AGENTS.md) before changing
-the release process.
+Merging a PR into `main` starts the **Release** workflow. A lightweight planner
+verifies that the exact commit belongs to a merged PR and reads its workspace
+version. An already published version is a no-op, so a documentation update does
+not rebuild packages. Direct pushes do not publish automatically.
+
+The workflow builds and tests Windows x64, Linux x64 and macOS ARM wheels and Node
+addons, packages both WebAssembly targets, and verifies the distribution inventory
+and checksums. Only then does it create the matching immutable `vX.Y.Z` tag and
+publish through `CARGO_REGISTRY_TOKEN`, `PYPI_API_TOKEN` and `NPM_TOKEN`.
+The complete GitHub release becomes public after every registry upload and release
+asset check succeeds. Tags and versions do not need to be entered separately.
+
+The manual entry point supports building artifacts without publishing, or
+publishing a commit already merged into `main`:
+
+```sh
+gh workflow run release.yml --repo SpenserCai/tts-rs --ref main -f destination=artifacts
+gh workflow run release.yml --repo SpenserCai/tts-rs --ref main -f destination=registries
+```
+
+After a partial publication, use **Re-run failed jobs** on the original Actions
+run. It reuses the verified packages and checks registry digests before skipping
+identical uploads. Do not rebuild a reserved version or move its tag. See the
+[maintenance requirements](AGENTS.md) for versioning and retry rules.
 
 ## Attribution
 

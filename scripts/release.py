@@ -78,9 +78,7 @@ def preflight(tag: str, publish: bool) -> None:
 
 def rust_packages(publish: bool, artifacts: Path | None = None) -> None:
     if publish:
-        tag = os.environ.get("RELEASE_TAG")
-        if not tag:
-            raise SystemExit("RELEASE_TAG is required for registry publication")
+        tag = os.environ.get("RELEASE_TAG") or f"v{check_version()}"
         preflight(tag, True)
         if artifacts is None:
             raise SystemExit("--artifacts must identify the verified release bundle")
@@ -364,13 +362,68 @@ def prepare_pypi(directory: Path, output: Path) -> None:
     print(f"Python wheels remaining to publish: {pending}")
 
 
-def github_release(tag: str, directory: Path, draft: bool) -> None:
-    verify_distributions(directory)
-    files = [str(path) for path in sorted(directory.rglob("*")) if path.is_file()]
+def github_asset_files(directory: Path, temporary: Path) -> list[Path]:
+    """Adapt the checksum inventory to GitHub's flat assets without changing packages."""
+    files = [path for path in sorted(directory.rglob("*")) if path.is_file()]
+    if len({path.name for path in files}) != len(files):
+        raise SystemExit("GitHub release asset names must be unique")
+    files = [path for path in files if path != directory / "SHA256SUMS"]
     if not files:
         raise SystemExit("No release artifacts found")
-    run("gh", "release", "create", tag, *(('--draft',) if draft else ()),
-        "--verify-tag", "--generate-notes", *files)
+    checksum_file = temporary / "SHA256SUMS"
+    checksum_file.write_text("".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        for path in sorted(files, key=lambda path: path.name)
+    ), encoding="utf-8")
+    return [*files, checksum_file]
+
+
+def github_release(tag: str, directory: Path, draft: bool) -> None:
+    verify_distributions(directory)
+    with tempfile.TemporaryDirectory(prefix="tts-github-assets-") as temporary:
+        files = github_asset_files(directory, Path(temporary))
+        publish_github_assets(tag, files, draft)
+
+
+def publish_github_assets(tag: str, files: list[Path], draft: bool) -> None:
+    from release_plan import completion_marker, release_document, remote_tag, run_marker
+
+    if tag != f"v{check_version()}":
+        raise SystemExit("GitHub release tag must equal the unified workspace version")
+    commit = capture("git", "rev-parse", "HEAD")
+    marker = run_marker(commit)
+    if remote_tag(tag) != (commit, marker):
+        raise SystemExit("GitHub release tag must belong to this exact workflow run")
+    expected = {path.name: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
+    if len(expected) != len(files):
+        raise SystemExit("GitHub release asset names must be unique")
+    document = release_document(tag)
+    if document is None:
+        # Keep the release invisible until every upload is verified. An interrupted
+        # upload can then resume from the original run without replacing any file.
+        with tempfile.TemporaryDirectory(prefix="tts-release-notes-") as temporary:
+            notes = Path(temporary) / "notes.md"
+            notes.write_text(f"{completion_marker(commit)}\n<!-- {marker} -->\n", encoding="utf-8")
+            run("gh", "release", "create", tag, "--draft", "--verify-tag", "--generate-notes",
+                "--notes-file", str(notes))
+        document = release_document(tag)
+    body = (document or {}).get("body") or ""
+    if completion_marker(commit) not in body or marker not in body:
+        raise SystemExit("Existing GitHub release belongs to different sources or workflow run")
+    uploaded = {asset["name"]: asset.get("digest") for asset in document.get("assets", [])}
+    if any(name not in expected or expected[name] != digest for name, digest in uploaded.items()):
+        raise SystemExit("GitHub release already contains unexpected or different assets")
+    missing = [path for path in files if path.name not in uploaded]
+    if missing and not document.get("draft"):
+        raise SystemExit("A published GitHub release is incomplete; refusing to modify it")
+    for path in missing:
+        run("gh", "release", "upload", tag, str(path))
+    verified = release_document(tag)
+    if not verified or {asset["name"]: asset.get("digest") for asset in verified.get("assets", [])} != expected:
+        raise SystemExit("GitHub release asset inventory or digests differ from verified distributions")
+    if not draft and verified.get("draft"):
+        run("gh", "release", "edit", tag, "--draft=false")
+    print(f"Verified GitHub {'draft' if draft else 'release'}: {tag}")
 
 
 def test_wheel(directory: Path) -> None:
@@ -418,7 +471,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("check-secrets", help="Check registry credential presence without logging values")
     pre = commands.add_parser("preflight")
-    pre.add_argument("--tag", default=os.getenv("RELEASE_TAG"), required=not os.getenv("RELEASE_TAG"))
+    pre.add_argument("--tag", default=os.getenv("RELEASE_TAG"))
     pre.add_argument("--publish", action="store_true")
     rust = commands.add_parser("rust")
     rust.add_argument("--publish", action="store_true")
@@ -443,14 +496,14 @@ def main() -> None:
     node_test = commands.add_parser("test-node")
     node_test.add_argument("directory", type=Path)
     github = commands.add_parser("github")
-    github.add_argument("--tag", default=os.getenv("RELEASE_TAG"), required=not os.getenv("RELEASE_TAG"))
+    github.add_argument("--tag", default=os.getenv("RELEASE_TAG"))
     github.add_argument("--directory", type=Path, required=True)
     github.add_argument("--draft", action="store_true", help="Create a reviewable draft instead of a public release")
     args = parser.parse_args()
     if args.command == "check-secrets":
         check_secrets()
     elif args.command == "preflight":
-        preflight(args.tag, args.publish)
+        preflight(args.tag or f"v{check_version()}", args.publish)
     elif args.command == "rust":
         rust_packages(args.publish, args.artifacts)
     elif args.command == "collect-crates":
@@ -472,7 +525,7 @@ def main() -> None:
     elif args.command == "test-node":
         test_node_packages(args.directory)
     else:
-        github_release(args.tag, args.directory, args.draft)
+        github_release(args.tag or f"v{check_version()}", args.directory, args.draft)
 
 
 if __name__ == "__main__":

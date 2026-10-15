@@ -2477,6 +2477,7 @@ dependencies = [
  "candle-transformers",
  "ort",
  "rand",
+ "rustfft",
  "serde",
  "serde_json",
  "tempfile",

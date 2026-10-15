@@ -167,11 +167,83 @@ pub struct Mish;
 
 impl Module for Mish {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        // mish(x) = x * tanh(softplus(x))
-        // softplus(x) = ln(1 + exp(x))
-        let softplus = (x.exp()? + 1.0)?.log()?;
-        let tanh_sp = softplus.tanh()?;
-        x * tanh_sp
+        use candle::DType;
+        let dtype = x.dtype();
+        if !matches!(dtype, DType::F16 | DType::BF16 | DType::F32 | DType::F64) {
+            candle::bail!("Mish requires floating-point input");
+        }
+        let x = match dtype {
+            DType::F16 | DType::BF16 => x.to_dtype(DType::F32)?,
+            _ => x.clone(),
+        };
+        let output = if x.device().is_cpu() {
+            x.contiguous()?.apply_op1_no_bwd(&StableMish)?
+        } else {
+            mish_tensor(&x)?
+        };
+        output.to_dtype(dtype)
+    }
+}
+
+// Keep accelerator values on their original device. exp(-abs(x)) cannot
+// overflow. In the negative tail, log(1+y) would discard y; a fifth-order
+// log1p polynomial below x=-4 has <7e-12 truncation error before tanh.
+fn mish_tensor(x: &Tensor) -> Result<Tensor> {
+    let y = x.abs()?.neg()?.exp()?;
+    let softplus = ((&y + 1.0)?.log()? + x.maximum(&x.zeros_like()?)?)?;
+    let tail = ((&y * 0.2)? - 0.25)?;
+    let tail = ((tail * &y)? + (1.0 / 3.0))?;
+    let tail = ((tail * &y)? - 0.5)?;
+    let tail = (((tail * &y)? + 1.0)? * &y)?;
+    let softplus = x.lt(-4.0)?.where_cond(&tail, &softplus)?;
+    x * softplus.tanh()?
+}
+
+struct StableMish;
+
+impl candle::CustomOp1 for StableMish {
+    fn name(&self) -> &'static str {
+        "cosyvoice-mish"
+    }
+
+    fn cpu_fwd(
+        &self,
+        storage: &candle::CpuStorage,
+        layout: &candle::Layout,
+    ) -> Result<(candle::CpuStorage, candle::Shape)> {
+        let Some((start, end)) = layout.contiguous_offsets() else {
+            candle::bail!("Mish requires contiguous CPU storage");
+        };
+        let output = match storage {
+            candle::CpuStorage::F32(values) => candle::CpuStorage::F32(
+                values[start..end]
+                    .iter()
+                    .map(|&x| {
+                        // For x > 20 the F32 result is exactly x. This also avoids
+                        // an overflowing exp for finite large positive inputs.
+                        if x > 20.0 {
+                            x
+                        } else {
+                            x * x.exp().ln_1p().tanh()
+                        }
+                    })
+                    .collect(),
+            ),
+            candle::CpuStorage::F64(values) => candle::CpuStorage::F64(
+                values[start..end]
+                    .iter()
+                    .map(|&x| {
+                        if x > 40.0 {
+                            x
+                        } else {
+                            x * x.exp().ln_1p().tanh()
+                        }
+                    })
+                    .collect(),
+            ),
+            _ => candle::bail!("Mish CPU storage requires float32 or float64"),
+        };
+        Ok((output, layout.shape().clone()))
     }
 }
 
@@ -179,6 +251,55 @@ impl Module for Mish {
 mod tests {
     use super::*;
     use candle::{DType, Device};
+
+    #[test]
+    fn mish_preserves_the_negative_tail_and_finite_positive_extremes() -> Result<()> {
+        // Independent pinned PyTorch 2.3.1 nn.Mish CPU outputs. In particular,
+        // log(1 + exp(x)) incorrectly becomes zero for x <= -18 in float32.
+        let inputs = [
+            -100f32,
+            -20.,
+            -17.,
+            -16.,
+            -10.,
+            -3.,
+            -1.,
+            0.,
+            1.,
+            3.,
+            10.,
+            20.,
+            100.,
+            f32::MAX,
+        ];
+        let expected = [
+            -3.784e-42f32,
+            -4.122_307_5e-8,
+            -7.037_895e-7,
+            -1.800_562_7e-6,
+            -4.539_890_2e-4,
+            -0.145_647_47,
+            -0.303_401_44,
+            0.,
+            0.865_098_36,
+            2.986_535,
+            10.,
+            20.,
+            100.,
+            f32::MAX,
+        ];
+        let x = Tensor::from_slice(&inputs, (2, 7), &Device::Cpu)?;
+        // Execute both the CPU kernel and the portable tensor expression on
+        // CPU, independently of whether an accelerator is available in CI.
+        for output in [Mish.forward(&x)?, mish_tensor(&x)?] {
+            let values = output.flatten_all()?.to_vec1::<f32>()?;
+            for (value, expected) in values.iter().zip(expected) {
+                assert!(value.is_finite());
+                assert!((value - expected).abs() <= expected.abs() * 3e-6 + f32::from_bits(1));
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_snake_activation() -> Result<()> {

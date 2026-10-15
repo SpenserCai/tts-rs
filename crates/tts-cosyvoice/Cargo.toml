@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 description = "Candle inference components for CosyVoice 3 speech synthesis"
-license = "MIT OR Apache-2.0"
+license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
 repository = "https://github.com/SpenserCai/tts-rs"
 
 [features]
@@ -23,6 +23,7 @@ tokenizers = { version = "0.22", default-features = false, features = ["fancy-re
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rand = "0.9"
+rustfft = "6.2"
 
 [dev-dependencies]
 tempfile = "3.15"

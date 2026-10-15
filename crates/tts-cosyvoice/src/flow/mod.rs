@@ -9,6 +9,7 @@
 pub mod dit;
 pub mod embeddings;
 pub mod flow_matching;
+mod normalization;
 pub mod pre_lookahead;
 
 pub use dit::DiT;

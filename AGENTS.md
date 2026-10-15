@@ -29,6 +29,10 @@ or model card is not a substitute for reading the executed Python path.
 
 Use edition 2024 and the pinned toolchain. Run `python scripts/ci.py rust` before
 handing off a change. It runs fmt, strict Clippy, tests and strict rustdoc.
+Prepare the pinned frontend runtime with `python scripts/install_onnxruntime.py`
+and set `ORT_DYLIB_PATH` to the reported library before running native tests.
+The small ONNX operator regression is part of the default workspace gate; a
+missing runtime must fail rather than skip that regression. CI prepares it explicitly.
 Every supported build must have zero errors and zero warnings. Do not add
 crate-wide `allow(warnings)`, silence a failed test, or change numeric tolerances
 just to obtain a green result. Targeted allowances need a local technical reason.
@@ -76,25 +80,37 @@ locally and in CI. The version command does not tag, merge, dispatch or publish.
 The initial release remains 0.1.0 until released; subsequent changes follow
 Semantic Versioning, with breaking changes before 1.0 incrementing the minor.
 
-All GitHub workflows remain `workflow_dispatch` only. Keep a cheap Linux gate,
-an explicit full platform matrix, and separate expensive model evaluation.
+Release runs after a PR is merged into `main`. Its `push` event is only a signal:
+the lightweight planner must verify the exact triggering SHA against GitHub's PR
+association API (`closed`, `merged_at`, matching `merge_commit_sha`, base repository
+and `main` branch), and confirm that commit belongs to `origin/main`. Direct pushes
+do not publish. Every job checks out that immutable SHA, never a PR head or a moving
+branch. Do not replace this with a privileged unmerged-PR trigger. Completed versions
+are cheap no-ops with an Actions summary; a new release requires a unified version
+update. Other CI, benchmarks and model evaluation remain `workflow_dispatch` only.
+Keep a cheap Linux gate, an explicit full platform matrix, and separate expensive
+model evaluation.
 Pin external actions to verified commit SHAs. Use minimal permissions, cache
 keys tied to dependency/model revisions, timeouts and bounded artifact retention.
 Never add push/PR/schedule triggers without a maintainer request.
 
-Release defaults to a dry run. Real registry publication requires the existing
-matching tag, complete checks and configured registry identities. Build once,
+The manual release entry point defaults to `artifacts`; choose `registries` to
+publish a commit already in `main` history. Both automatic and manual release derive
+the version from the workspace, with no independent tag/version input. After complete
+checks and package installation tests, reserve an annotated `vVERSION` tag for this
+exact commit and workflow run. Never move or overwrite an existing tag. Build once,
 test the built Python/npm packages, then reuse those exact artifacts. Cargo
 performs its standard package verification again when publishing the same tagged
 sources, after checking that repackaged archives match the verified artifacts.
 Registry jobs use repository secrets `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`
 and `PYPI_API_TOKEN`. Preflight may check presence only; do not print or export
 credential values. Only the corresponding publisher uses each credential.
-After all registry uploads succeed, publish the GitHub release with checksums and
-the tested distributions. Partial registry failures remain failed releases.
-Retry failed publisher jobs from the same workflow run so they reuse the original
-artifacts: publishers skip
-only archives whose registry digest exactly matches and reject conflicting or
+After all registry uploads succeed, upload the tested distributions to a GitHub draft,
+verify every asset digest, then publish the complete release with checksums. A retry
+may add only missing identical assets, never replace existing ones. Partial registry
+failures remain failed releases. Use **Re-run failed jobs** from the same workflow
+run, not **Re-run all jobs**, so publishers reuse the original artifacts. Publishers
+skip only archives whose registry digest exactly matches and reject conflicting or
 yanked files. Do not rebuild an already uploaded version and blindly skip it;
 new build metadata can change wheel/npm hashes even for the same source commit.
 Do not create release tags, merge branches, publish packages or configure secrets as a side effect of

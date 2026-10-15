@@ -3,7 +3,7 @@ use candle::{Device, Tensor};
 use serde::Deserialize;
 use serde_json::json;
 use std::error::Error;
-use tts_cosyvoice::frontend::{KaldiFbank, resample};
+use tts_cosyvoice::frontend::{KaldiFbank, MelSpectrogram, resample};
 
 #[derive(Deserialize)]
 struct Input {
@@ -25,11 +25,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pcm_16k = resample(&pcm, input.sample_rate, 16_000)?;
     let fbank = KaldiFbank::new_for_campplus().forward(&pcm_16k)?;
     let normalized = fbank.broadcast_sub(&fbank.mean(0)?)?;
+    let pcm_24k = resample(&pcm, input.sample_rate, 24_000)?;
+    let mel =
+        MelSpectrogram::new_cosyvoice_speech_feat(&Device::Cpu)?.forward_cosyvoice(&pcm_24k)?;
+    let whisper = MelSpectrogram::new_whisper_format(&Device::Cpu)?.forward_whisper(&pcm_16k)?;
+    let floor = (whisper.flatten_all()?.max(0)? - 8.0)?;
+    let whisper = ((whisper.broadcast_maximum(&floor)? + 4.0)? / 4.0)?;
     let mut tensors = serde_json::Map::new();
     for (key, value) in [
         ("pcm_16k", pcm_16k),
         ("fbank", fbank),
         ("normalized", normalized),
+        ("mel", mel),
+        ("whisper", whisper),
     ] {
         tensors.insert(key.into(), json!({"shape": value.dims(), "dtype": "float32", "data": value.flatten_all()?.to_vec1::<f32>()?}));
     }
