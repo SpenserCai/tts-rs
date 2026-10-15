@@ -166,21 +166,15 @@ pub struct DiTBlock {
 
 /// LayerNorm without learnable parameters (elementwise_affine=False)
 #[derive(Debug, Clone)]
-struct LayerNormNoAffine {
-    eps: f64,
-}
+struct LayerNormNoAffine;
 
 impl LayerNormNoAffine {
     fn new() -> Self {
-        Self { eps: 1e-6 }
+        Self
     }
 
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
-        let mean = x.mean_keepdim(D::Minus1)?;
-        let x_centered = x.broadcast_sub(&mean)?;
-        let var = x_centered.sqr()?.mean_keepdim(D::Minus1)?;
-        let std = (var + self.eps)?.sqrt()?;
-        x_centered.broadcast_div(&std)
+        super::normalization::layer_norm_no_affine(x)
     }
 }
 

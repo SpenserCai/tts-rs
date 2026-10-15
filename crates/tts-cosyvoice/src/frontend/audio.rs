@@ -3,7 +3,61 @@
 //! Implements mel spectrogram extraction and Kaldi-compatible Fbank features.
 
 use candle::{DType, Device, Result, Tensor};
+use rustfft::{FftPlanner, num_complex::Complex};
 use std::f64::consts::PI;
+
+fn validate_samples(samples: &[f32]) -> Result<()> {
+    if samples.is_empty() || samples.iter().any(|value| !value.is_finite()) {
+        candle::bail!("expected nonempty finite mono PCM");
+    }
+    Ok(())
+}
+
+fn validate_mel_dimensions(
+    sample_rate: usize,
+    n_fft: usize,
+    hop: usize,
+    n_mels: usize,
+) -> Result<()> {
+    if sample_rate == 0
+        || n_fft < 2
+        || hop == 0
+        || hop > n_fft
+        || n_mels == 0
+        || n_mels.checked_mul(n_fft / 2 + 1).is_none()
+        || n_mels.checked_add(2).is_none()
+    {
+        candle::bail!(
+            "invalid mel dimensions: positive sample rate/bands and 0 < hop <= FFT required"
+        );
+    }
+    Ok(())
+}
+
+/// Float32 operation order of torch.hann_window(periodic=True).
+fn periodic_hann(size: usize) -> Vec<f32> {
+    let step = (2.0 * PI / size as f64) as f32;
+    (0..size)
+        .map(|i| 0.5f32 - 0.5f32 * (i as f32 * step).cos())
+        .collect()
+}
+
+/// PyTorch reflection excludes the boundary sample and requires pad < length.
+fn reflect_pad(samples: &[f32], padding: usize) -> Result<Vec<f32>> {
+    if samples.len() <= padding {
+        candle::bail!("reflection padding requires more than {padding} samples");
+    }
+    let mut padded = Vec::with_capacity(samples.len() + 2 * padding);
+    padded.extend(samples[1..=padding].iter().rev().copied());
+    padded.extend_from_slice(samples);
+    padded.extend(
+        samples[samples.len() - padding - 1..samples.len() - 1]
+            .iter()
+            .rev()
+            .copied(),
+    );
+    Ok(padded)
+}
 
 /// Mel Spectrogram Extractor
 ///
@@ -24,7 +78,7 @@ impl MelSpectrogram {
     /// Create CosyVoice Speech Feat configuration
     ///
     /// Uses librosa-compatible mel filters matching Matcha-TTS mel_spectrogram.
-    /// This ensures prompt_mel matches the Python implementation exactly.
+    /// Padding, window dtype and filter normalization follow the pinned Python implementation.
     pub fn new_cosyvoice_speech_feat(device: &Device) -> Result<Self> {
         // Matcha-TTS uses: librosa_mel_fn(sr=24000, n_fft=1920, n_mels=80, fmin=0, fmax=None)
         Self::new_with_librosa_filters(24000, 1920, 480, 80, device)
@@ -38,12 +92,8 @@ impl MelSpectrogram {
         n_mels: usize,
         device: &Device,
     ) -> Result<Self> {
-        let hann_window: Vec<f32> = (0..n_fft)
-            .map(|i| {
-                let x = (2.0 * PI * i as f64) / n_fft as f64;
-                (0.5 * (1.0 - x.cos())) as f32
-            })
-            .collect();
+        validate_mel_dimensions(sample_rate, n_fft, hop_length, n_mels)?;
+        let hann_window = periodic_hann(n_fft);
 
         // Use librosa-compatible mel filters (Slaney normalization)
         let mel_filters = Self::create_librosa_mel_filters(sample_rate, n_fft, n_mels);
@@ -62,41 +112,9 @@ impl MelSpectrogram {
     /// Create Whisper format configuration (for speech tokenizer)
     ///
     /// Uses librosa-compatible mel filters matching OpenAI Whisper's mel_filters.npz.
-    /// This ensures speech tokens match the Python implementation exactly.
+    /// Feature extraction follows the pinned Python implementation.
     pub fn new_whisper_format(device: &Device) -> Result<Self> {
-        Self::new_whisper_with_librosa_filters(16000, 400, 160, 128, device)
-    }
-
-    /// Create Whisper format with librosa-compatible mel filters
-    ///
-    /// This matches OpenAI Whisper's mel spectrogram exactly by using
-    /// Slaney-normalized mel filters computed the same way as librosa.
-    fn new_whisper_with_librosa_filters(
-        sample_rate: usize,
-        n_fft: usize,
-        hop_length: usize,
-        n_mels: usize,
-        device: &Device,
-    ) -> Result<Self> {
-        let hann_window: Vec<f32> = (0..n_fft)
-            .map(|i| {
-                let x = (2.0 * PI * i as f64) / n_fft as f64;
-                (0.5 * (1.0 - x.cos())) as f32
-            })
-            .collect();
-
-        // Use librosa-compatible mel filters (Slaney normalization)
-        let mel_filters = Self::create_librosa_mel_filters(sample_rate, n_fft, n_mels);
-
-        Ok(Self {
-            sample_rate,
-            n_fft,
-            hop_length,
-            n_mels,
-            mel_filters,
-            hann_window,
-            target_device: device.clone(),
-        })
+        Self::new_with_librosa_filters(16000, 400, 160, 128, device)
     }
 
     pub fn new(
@@ -107,12 +125,8 @@ impl MelSpectrogram {
         device: &Device,
     ) -> Result<Self> {
         // Pre-compute Hann window
-        let hann_window: Vec<f32> = (0..n_fft)
-            .map(|i| {
-                let x = (2.0 * PI * i as f64) / n_fft as f64;
-                (0.5 * (1.0 - x.cos())) as f32
-            })
-            .collect();
+        validate_mel_dimensions(sample_rate, n_fft, hop_length, n_mels)?;
+        let hann_window = periodic_hann(n_fft);
 
         // Pre-compute Mel filter bank
         let mel_filters = Self::create_mel_filters(sample_rate, n_fft, n_mels);
@@ -206,7 +220,7 @@ impl MelSpectrogram {
             // enorm = 2.0 / (hz_points[m+2] - hz_points[m])
             let enorm = 2.0 / (right_hz - left_hz).max(1e-10);
             for k in 0..n_freqs {
-                filters[m * n_freqs + k] *= enorm as f32;
+                filters[m * n_freqs + k] = (filters[m * n_freqs + k] as f64 * enorm) as f32;
             }
         }
 
@@ -297,32 +311,11 @@ impl MelSpectrogram {
             .to_device(&Device::Cpu)?
             .to_vec1()?;
 
-        // Apply Matcha-TTS style reflect padding if requested
-        // pad_size = (n_fft - hop_length) / 2 on each side
+        validate_samples(&samples)?;
         let padded_samples = if use_matcha_padding {
-            let pad_size = (self.n_fft - self.hop_length) / 2;
-            let padded_len = samples.len() + 2 * pad_size;
-            let mut padded = vec![0.0f32; padded_len];
-
-            // Reflect padding on left side
-            for i in 0..pad_size {
-                padded[pad_size - 1 - i] = samples[(i + 1).min(samples.len() - 1)];
-            }
-
-            // Copy original samples
-            for (i, &s) in samples.iter().enumerate() {
-                padded[pad_size + i] = s;
-            }
-
-            // Reflect padding on right side
-            for i in 0..pad_size {
-                let src_idx = samples.len().saturating_sub(2 + i);
-                padded[pad_size + samples.len() + i] = samples[src_idx];
-            }
-
-            padded
+            reflect_pad(&samples, (self.n_fft - self.hop_length) / 2)?
         } else {
-            samples.clone()
+            samples
         };
 
         // Calculate number of frames
@@ -340,27 +333,24 @@ impl MelSpectrogram {
         let n_freqs = self.n_fft / 2 + 1;
         let mut mel_output = vec![0.0f32; self.n_mels * n_frames];
 
-        // Process frame by frame
+        let fft = FftPlanner::<f32>::new().plan_fft_forward(self.n_fft);
+        let mut fft_input = vec![Complex::new(0.0, 0.0); self.n_fft];
+        let mut fft_scratch = vec![Complex::new(0.0, 0.0); fft.get_inplace_scratch_len()];
         for frame_idx in 0..n_frames {
             let start = frame_idx * self.hop_length;
 
             // Apply window + FFT
-            let mut fft_input = vec![0.0f32; self.n_fft * 2]; // Complex representation
-            for i in 0..self.n_fft {
-                if start + i < n_samples {
-                    fft_input[i * 2] = padded_samples[start + i] * self.hann_window[i];
-                }
+            for (i, value) in fft_input.iter_mut().enumerate() {
+                *value = Complex::new(padded_samples[start + i] * self.hann_window[i], 0.0);
             }
-
-            // Use Cooley-Tukey FFT
-            let fft_out = Self::fft_complex(&fft_input);
+            fft.process_with_scratch(&mut fft_input, &mut fft_scratch);
 
             // Calculate magnitude spectrum (not power!)
             // Matcha-TTS uses: spec = torch.sqrt(spec.pow(2).sum(-1) + 1e-9)
             let mut magnitude_spectrum = vec![0.0f32; n_freqs];
             for k in 0..n_freqs {
-                let re = fft_out[k * 2];
-                let im = fft_out[k * 2 + 1];
+                let re = fft_input[k].re;
+                let im = fft_input[k].im;
                 magnitude_spectrum[k] = (re * re + im * im + 1e-9).sqrt();
             }
 
@@ -383,7 +373,7 @@ impl MelSpectrogram {
 
     /// Extract Mel Spectrogram matching OpenAI Whisper's implementation
     ///
-    /// This method matches `whisper.log_mel_spectrogram()` exactly:
+    /// This method follows the STFT and mel stages of `whisper.log_mel_spectrogram()`:
     /// 1. Uses center=True padding (like torch.stft default)
     /// 2. Drops the last frame (magnitudes[..., :-1])
     /// 3. Uses librosa-compatible mel filters (Slaney normalization)
@@ -407,14 +397,9 @@ impl MelSpectrogram {
             .to_dtype(DType::F32)?
             .to_device(&Device::Cpu)?
             .to_vec1()?;
+        validate_samples(&samples)?;
         let n_samples = samples.len();
-
-        // Apply center padding (like torch.stft with center=True)
-        // Pad n_fft // 2 on each side
-        let pad_len = self.n_fft / 2;
-        let padded_len = n_samples + 2 * pad_len;
-        let mut padded_samples = vec![0.0f32; padded_len];
-        padded_samples[pad_len..(n_samples + pad_len)].copy_from_slice(&samples[..n_samples]);
+        let padded_samples = reflect_pad(&samples, self.n_fft / 2)?;
 
         // Calculate number of frames (torch.stft formula with center=True)
         // n_frames = 1 + n_samples // hop_length
@@ -434,26 +419,23 @@ impl MelSpectrogram {
         let n_freqs = self.n_fft / 2 + 1;
         let mut mel_output = vec![0.0f32; self.n_mels * n_frames];
 
-        // Process frame by frame
+        let fft = FftPlanner::<f32>::new().plan_fft_forward(self.n_fft);
+        let mut fft_input = vec![Complex::new(0.0, 0.0); self.n_fft];
+        let mut fft_scratch = vec![Complex::new(0.0, 0.0); fft.get_inplace_scratch_len()];
         for frame_idx in 0..n_frames {
             let start = frame_idx * self.hop_length;
 
             // Apply window + FFT
-            let mut fft_input = vec![0.0f32; self.n_fft * 2]; // Complex representation
-            for i in 0..self.n_fft {
-                if start + i < padded_len {
-                    fft_input[i * 2] = padded_samples[start + i] * self.hann_window[i];
-                }
+            for (i, value) in fft_input.iter_mut().enumerate() {
+                *value = Complex::new(padded_samples[start + i] * self.hann_window[i], 0.0);
             }
-
-            // Use Cooley-Tukey FFT
-            let fft_out = Self::fft_complex(&fft_input);
+            fft.process_with_scratch(&mut fft_input, &mut fft_scratch);
 
             // Calculate power spectrum (|STFT|^2)
             let mut power_spectrum = vec![0.0f32; n_freqs];
             for k in 0..n_freqs {
-                let re = fft_out[k * 2];
-                let im = fft_out[k * 2 + 1];
+                let re = fft_input[k].re;
+                let im = fft_input[k].im;
                 power_spectrum[k] = re * re + im * im;
             }
 
@@ -471,68 +453,6 @@ impl MelSpectrogram {
         // Transfer to target device
         let mel = Tensor::from_vec(mel_output, (self.n_mels, n_frames), &Device::Cpu)?;
         mel.unsqueeze(0)?.to_device(&self.target_device)
-    }
-
-    fn fft_complex(input: &[f32]) -> Vec<f32> {
-        let n = input.len() / 2;
-        if n == 1 {
-            return input.to_vec();
-        }
-        if n % 2 == 1 {
-            return Self::dft(input);
-        }
-
-        let mut even = Vec::with_capacity(n);
-        let mut odd = Vec::with_capacity(n);
-        for i in 0..n / 2 {
-            even.push(input[i * 4]);
-            even.push(input[i * 4 + 1]);
-            odd.push(input[i * 4 + 2]);
-            odd.push(input[i * 4 + 3]);
-        }
-
-        let even_fft = Self::fft_complex(&even);
-        let odd_fft = Self::fft_complex(&odd);
-
-        let mut out = vec![0.0f32; n * 2];
-        let two_pi = 2.0 * PI;
-        for k in 0..n / 2 {
-            let angle = two_pi * k as f64 / n as f64;
-            let cos_a = angle.cos() as f32;
-            let sin_a = (-angle.sin()) as f32;
-
-            let odd_re = odd_fft[k * 2];
-            let odd_im = odd_fft[k * 2 + 1];
-            let t_re = cos_a * odd_re - sin_a * odd_im;
-            let t_im = cos_a * odd_im + sin_a * odd_re;
-
-            out[k * 2] = even_fft[k * 2] + t_re;
-            out[k * 2 + 1] = even_fft[k * 2 + 1] + t_im;
-            out[(k + n / 2) * 2] = even_fft[k * 2] - t_re;
-            out[(k + n / 2) * 2 + 1] = even_fft[k * 2 + 1] - t_im;
-        }
-        out
-    }
-
-    fn dft(input: &[f32]) -> Vec<f32> {
-        let n = input.len() / 2;
-        let mut out = vec![0.0f32; n * 2];
-        let two_pi = 2.0 * PI;
-
-        for k in 0..n {
-            let mut re = 0.0f32;
-            let mut im = 0.0f32;
-            for j in 0..n {
-                let angle = two_pi * k as f64 * j as f64 / n as f64;
-                let cos_a = angle.cos() as f32;
-                let sin_a = angle.sin() as f32;
-                re += input[j * 2] * cos_a + input[j * 2 + 1] * sin_a;
-                im += -input[j * 2] * sin_a + input[j * 2 + 1] * cos_a;
-            }
-            out[k * 2] = re;
-            out[k * 2 + 1] = im;
-        }
-        out
     }
 }
 
@@ -698,6 +618,9 @@ impl KaldiFbank {
         let n_fft_bins = self.padded_window_size / 2 + 1;
         let mut fbank = vec![0.0f32; n_frames * self.n_mels];
         let alpha = self.preemphasis as f32;
+        let fft = FftPlanner::<f32>::new().plan_fft_forward(self.padded_window_size);
+        let mut fft_input = vec![Complex::new(0.0, 0.0); self.padded_window_size];
+        let mut fft_scratch = vec![Complex::new(0.0, 0.0); fft.get_inplace_scratch_len()];
 
         for frame_idx in 0..n_frames {
             let start = frame_idx * self.hop_length;
@@ -733,14 +656,19 @@ impl KaldiFbank {
             frame.resize(self.padded_window_size, 0.0);
 
             // 6. FFT (returns n_fft_bins complex values as interleaved [re, im, re, im, ...])
-            let fft_out = self.rfft(&frame);
+            for (value, &sample) in fft_input.iter_mut().zip(&frame) {
+                *value = Complex::new(sample, 0.0);
+            }
+            fft.process_with_scratch(&mut fft_input, &mut fft_scratch);
 
             // 7. Power spectrum from rfft output (all n_fft_bins including Nyquist)
             let mut power = vec![0.0f32; n_fft_bins];
             for k in 0..n_fft_bins {
-                let re = fft_out[k * 2];
-                let im = fft_out[k * 2 + 1];
-                power[k] = re * re + im * im;
+                let re = fft_input[k].re;
+                let im = fft_input[k].im;
+                // Kaldi applies complex abs, then squares the rounded magnitude.
+                let magnitude = re.hypot(im);
+                power[k] = magnitude * magnitude;
             }
 
             // 8. Mel filter + log
@@ -754,17 +682,6 @@ impl KaldiFbank {
         }
 
         Tensor::from_vec(fbank, (n_frames, self.n_mels), audio.device())
-    }
-
-    fn rfft(&self, input: &[f32]) -> Vec<f32> {
-        let n = input.len();
-        let mut complex_input = vec![0.0f32; n * 2];
-        for (i, &x) in input.iter().enumerate() {
-            complex_input[i * 2] = x;
-        }
-
-        let fft_out = MelSpectrogram::fft_complex(&complex_input);
-        fft_out[..(n + 2)].to_vec()
     }
 }
 
@@ -920,6 +837,90 @@ fn gcd(a: usize, b: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_frontend_features_include_both_boundaries_and_fractional_tail() -> Result<()> {
+        // Generated by scripts/reference/export_cosyvoice_frontend.py from
+        // public deterministic PCM, torch/torchaudio 2.3.1, float32 CPU.
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/frontend.json"))
+                .expect("valid checked-in frontend fixture");
+        let mut state = 0x1357_9bdfu32;
+        let samples: Vec<f32> = (0..2401)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((state >> 8) as i32 - 8_388_608) as f32 / 33_554_432.0
+            })
+            .collect();
+        let pcm = Tensor::from_vec(samples, 2401, &Device::Cpu)?;
+        let pcm_16k = resample(&pcm, 24_000, 16_000)?;
+        let fbank = KaldiFbank::new_for_campplus().forward(&pcm_16k)?;
+        let normalized = fbank.broadcast_sub(&fbank.mean(0)?)?;
+        let mel =
+            MelSpectrogram::new_cosyvoice_speech_feat(&Device::Cpu)?.forward_cosyvoice(&pcm)?;
+        let whisper =
+            MelSpectrogram::new_whisper_format(&Device::Cpu)?.forward_whisper(&pcm_16k)?;
+        let floor = (whisper.flatten_all()?.max(0)? - 8.0)?;
+        let whisper = ((whisper.broadcast_maximum(&floor)? + 4.0)? / 4.0)?;
+        for (name, tensor) in [
+            ("pcm_16k", pcm_16k),
+            ("fbank", fbank),
+            ("normalized", normalized),
+            ("mel", mel),
+            ("whisper", whisper),
+        ] {
+            let expected = &fixture["tensors"][name];
+            let shape: Vec<usize> =
+                serde_json::from_value(expected["shape"].clone()).expect("valid expected shape");
+            assert_eq!(tensor.dims(), shape, "{name} shape");
+            let values = tensor.flatten_all()?.to_vec1::<f32>()?;
+            let reference: Vec<f32> =
+                serde_json::from_value(expected["data"].clone()).expect("valid reference values");
+            assert_eq!(values.len(), reference.len());
+            for (index, (&actual, &expected)) in values.iter().zip(&reference).enumerate() {
+                assert!(
+                    (actual - expected).abs() <= 1e-5 + 1e-4 * expected.abs(),
+                    "{name}[{index}]: actual={actual}, expected={expected}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn reflection_and_input_validation_match_stft_contract() -> Result<()> {
+        assert_eq!(
+            reflect_pad(&[1.0, 2.0, 3.0, 4.0], 2)?,
+            vec![3.0, 2.0, 1.0, 2.0, 3.0, 4.0, 3.0, 2.0]
+        );
+        assert!(reflect_pad(&[1.0, 2.0], 2).is_err());
+        assert_eq!(reflect_pad(&[1.0], 0)?, vec![1.0]);
+        let whisper = MelSpectrogram::new_whisper_format(&Device::Cpu)?;
+        for samples in [
+            vec![],
+            vec![0.0; 200],
+            vec![f32::NAN; 401],
+            vec![f32::INFINITY; 401],
+        ] {
+            let pcm = Tensor::from_vec(samples.clone(), samples.len(), &Device::Cpu)?;
+            assert!(whisper.forward_whisper(&pcm).is_err());
+        }
+        let cosy = MelSpectrogram::new_cosyvoice_speech_feat(&Device::Cpu)?;
+        assert!(
+            cosy.forward_cosyvoice(&Tensor::zeros(720, DType::F32, &Device::Cpu)?)
+                .is_err()
+        );
+        for (rate, fft, hop, bins) in [
+            (0, 400, 160, 80),
+            (16000, 0, 160, 80),
+            (16000, 400, 0, 80),
+            (16000, 400, 401, 80),
+            (16000, 400, 160, 0),
+        ] {
+            assert!(MelSpectrogram::new(rate, fft, hop, bins, &Device::Cpu).is_err());
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_mel_spectrogram() -> Result<()> {

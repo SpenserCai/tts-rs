@@ -43,10 +43,12 @@ impl CosyVoice3Frontend {
             .build()
             .map_err(ort_error)?;
         let model_dir = model_dir.as_ref();
-        let load = |name: &str| load_session(&environment, &model_dir.join(name));
+        let load = |name: &str, preserve_pool_padding: bool| {
+            load_session(&environment, &model_dir.join(name), preserve_pool_padding)
+        };
         Ok(Self {
-            speech_tokenizer: Mutex::new(load("speech_tokenizer_v3.onnx")?),
-            campplus: Mutex::new(load("campplus.onnx")?),
+            speech_tokenizer: Mutex::new(load("speech_tokenizer_v3.onnx", false)?),
+            campplus: Mutex::new(load("campplus.onnx", true)?),
             whisper_mel: super::audio::MelSpectrogram::new_whisper_format(&Device::Cpu)?,
             kaldi_fbank: super::audio::KaldiFbank::new_for_campplus(),
             speech_feat_mel: super::audio::MelSpectrogram::new_cosyvoice_speech_feat(&Device::Cpu)?,
@@ -165,15 +167,58 @@ impl CosyVoice3Frontend {
     }
 }
 
-fn load_session(environment: &Environment, path: &Path) -> Result<Session> {
-    Session::builder(environment)
+fn load_session(
+    environment: &Environment,
+    path: &Path,
+    preserve_pool_padding: bool,
+) -> Result<Session> {
+    let mut builder = Session::builder(environment)
         .map_err(ort_error)?
         .with_intra_threads(1)
-        .map_err(ort_error)?
-        .commit_from_file(path)
-        .map_err(ort_error)
+        .map_err(ort_error)?;
+    if preserve_pool_padding {
+        // CAMPPlus has a Pad -> AveragePool(ceil_mode=1) boundary. Even
+        // when the Pad widths are zero, ORT 1.24.4's Pad_Fusion changes
+        // count_include_pad to 1 and divides the final partial window by the
+        // full kernel length. Preserve this operator boundary; keep all
+        // other graph optimizations enabled and the supplied graph unchanged.
+        builder = builder
+            .with_disabled_optimizers("Pad_Fusion")
+            .map_err(ort_error)?;
+    }
+    builder.commit_from_file(path).map_err(ort_error)
 }
 
 fn ort_error(error: impl std::fmt::Display) -> candle::Error {
     candle::Error::Msg(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn campplus_preserves_explicit_padding_in_average_pool() -> Result<()> {
+        // A reduced graph for CAMPPlus's Pad -> AveragePool boundary. Pad
+        // widths are zero. Ceil pooling's partial [1,2,3] window averages to
+        // 2.0; the faulty fusion divides by the four-wide kernel, yielding 1.5.
+        // This exercises the production session configuration, not a copied
+        // option in the test. ONNX-enabled tests require the documented runtime.
+        let runtime = std::env::var_os("ORT_DYLIB_PATH")
+            .ok_or_else(|| candle::Error::Msg("ONNX tests require ORT_DYLIB_PATH".into()))?;
+        let environment = ort::init_from(runtime)
+            .map_err(ort_error)?
+            .with_telemetry(false)
+            .build()
+            .map_err(ort_error)?;
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/explicit_padding_average.onnx");
+        let mut session = load_session(&environment, &path, true)?;
+        let input =
+            OrtTensor::from_array(([1, 1, 3], vec![1.0f32, 2.0, 3.0])).map_err(ort_error)?;
+        let output = session.run(ort::inputs![input]).map_err(ort_error)?;
+        let (_, values) = output[0].try_extract_tensor::<f32>().map_err(ort_error)?;
+        assert_eq!(values, &[2.0]);
+        Ok(())
+    }
 }

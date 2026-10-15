@@ -18,6 +18,8 @@ def sources(kind: str) -> dict[str, Path]:
     for model in models:
         for filename in ("LICENSE-MIT", "UPSTREAM.md"):
             files[f"{model.upper()}-{filename}"] = ROOT / "crates" / f"tts-{model}" / filename
+    if "cosyvoice" in models:
+        files["COSYVOICE-LICENSE-PYTORCH"] = ROOT / "crates/tts-cosyvoice/LICENSE-PYTORCH"
     return files
 
 

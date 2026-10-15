@@ -38,6 +38,50 @@ uses float64-designed, float32-cached sinc kernels and a ceil output length;
 Kaldi Povey windows and mel-bank tensor operations use float32 staging.
 Backend logarithm, FFT and reduction kernels can still differ in rounding.
 
+The frontend uses RustFFT (the same dependency as the Qwen model crate) with
+float32 buffers and one reused plan/scratch buffer per call. Whisper's centered
+STFT uses reflection, and Matcha/Whisper periodic Hann windows use float32
+operation order. Librosa mel normalization retains its float64 scale until the
+float32 filter assignment. These are model-local preprocessing operations; they
+do not change Candle or impose a shared mel definition on unrelated models.
+
+CAMPPlus sessions disable only the ONNX Runtime `Pad_Fusion` rewrite. In runtime
+1.24.4, it removes the graph's zero-width `Pad` and changes subsequent
+`AveragePool(ceil_mode=1)` from `count_include_pad=0` to `1`, changing the divisor
+for incomplete final windows. This is a semantic error, not float32 rounding.
+The remaining graph optimizations and speech tokenizer settings stay enabled.
+See the authored minimal graph in `tests/fixtures/explicit_padding_average.onnx`:
+the correct mean of `[1,2,3]` is `2.0`; the faulty rewrite returns `1.5`.
+The upstream rule name is defined in
+[`pad_fusion.h` at v1.24.4](https://github.com/microsoft/onnxruntime/blob/v1.24.4/onnxruntime/core/optimizer/pad_fusion.h).
+
+The model-local CPU float32 LayerNorm in `src/flow/normalization.rs` adapts the
+Welford/cascade reduction and normalization order from PyTorch 2.3.1, commit
+[`d44533f9d073df13895333e70b66f81c513c1889`](https://github.com/pytorch/pytorch/tree/d44533f9d073df13895333e70b66f81c513c1889):
+`aten/src/ATen/native/cpu/moments_utils.h` and
+`aten/src/ATen/native/cpu/layer_norm_kernel.cpp`.
+It preserves the float32 accumulation and fused multiply-add stages without
+depending on libtorch or modifying Candle. The complete upstream copyright
+notices and BSD conditions are retained in [LICENSE-PYTORCH](LICENSE-PYTORCH)
+and included in the native language distributions.
+
+Mish follows the same pinned PyTorch source's `x * tanh(log1p(exp(x)))`
+definition in `aten/src/ATen/native/cpu/Activation.cpp`. The local CPU kernel
+uses `ln_1p` to preserve the negative tail; large positive inputs return the
+already-rounded identity without overflowing `exp`. Accelerator tensors retain
+their device and use a stable softplus identity with a bounded negative-tail
+series. This is a numerical formulation of Mish, not a change to model weights
+or a claim of accelerator parity.
+
+The float32 Euler grid follows the same pinned PyTorch CPU source's
+`aten/src/ATen/native/cpu/RangeFactoriesKernel.cpp` linspace operation: a
+float32 step, symmetric evaluation from both endpoints, and fused multiply-add
+rounding. Independent `torch.linspace` bit-pattern fixtures cover non-default
+step counts as well as the unchanged ten-step default. Other precision modes
+retain their existing float32-staged grid; these fixtures do not claim
+half-precision or accelerator parity. The PyTorch attribution and license above
+also apply to this local grid construction.
+
 ## Validation boundary
 
 Component tests and compilation do not establish pretrained synthesis parity.

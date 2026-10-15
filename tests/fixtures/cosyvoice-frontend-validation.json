@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-15",
+  "scope": "Public deterministic PCM through Rust frontend and official CAMPPlus graph; excludes LLM, flow, HiFT and speech quality",
+  "input": {
+    "kind": "lcg32",
+    "seed": 324508639,
+    "samples": 2401,
+    "sample_rate": 24000,
+    "encoding": "float32 little-endian mono PCM",
+    "sha256": "54dfd5bed53b5bf6d2774eec7ce3ddd52d3adbb79c0694d7c9d72379d4e2a71d"
+  },
+  "environment": {
+    "platform": "Linux x86_64",
+    "torch": "2.3.1+cpu",
+    "official_onnxruntime": "1.18.0",
+    "rust_onnxruntime": "1.24.4",
+    "candle": "0.9.2",
+    "dtype": "float32",
+    "threads": 1
+  },
+  "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+  "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+  "campplus_sha256": "a6ac6a63997761ae2997373e2ee1c47040854b4b759ea41ec48e4e42df0f4d73",
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "tensor_metrics": {
+    "fbank": {
+      "elements": 640,
+      "max_absolute_error": 1.9073486328125e-05,
+      "mean_absolute_error": 1.1572919902391732e-06,
+      "failing_elements": 0,
+      "passed": true
+    },
+    "mel": {
+      "elements": 400,
+      "max_absolute_error": 3.5762786865234375e-07,
+      "mean_absolute_error": 6.422400474548339e-08,
+      "failing_elements": 0,
+      "passed": true
+    },
+    "normalized": {
+      "elements": 640,
+      "max_absolute_error": 1.4781951904296875e-05,
+      "mean_absolute_error": 9.279581718146801e-07,
+      "failing_elements": 0,
+      "passed": true
+    },
+    "pcm_16k": {
+      "elements": 1601,
+      "max_absolute_error": 1.3969838619232178e-09,
+      "mean_absolute_error": 8.725695577284309e-13,
+      "failing_elements": 0,
+      "passed": true
+    },
+    "whisper": {
+      "elements": 1280,
+      "max_absolute_error": 3.5762786865234375e-07,
+      "mean_absolute_error": 2.0442530512809753e-08,
+      "failing_elements": 0,
+      "passed": true
+    },
+    "speaker_embedding": {
+      "elements": 192,
+      "max_absolute_error": 1.812103874204718e-05,
+      "mean_absolute_error": 4.596785402883467e-06,
+      "failing_elements": 0,
+      "passed": true
+    }
+  },
+  "isolated_onnx_runtime_comparison": {
+    "input": "identical official mean-normalized Fbank",
+    "default_1_24_4": {
+      "elements": 192,
+      "max_absolute_error": 2.0995947122573853,
+      "mean_absolute_error": 0.7472429655608721,
+      "failing_elements": 192,
+      "passed": false
+    },
+    "disable_only_Pad_Fusion_1_24_4": {
+      "elements": 192,
+      "max_absolute_error": 1.4126300811767578e-05,
+      "mean_absolute_error": 4.767847713083029e-06,
+      "failing_elements": 0,
+      "passed": true
+    }
+  },
+  "reduced_operator_regression": {
+    "graph": "crates/tts-cosyvoice/tests/fixtures/explicit_padding_average.onnx",
+    "expected": 2.0,
+    "default_1_24_4": 1.5,
+    "production_campplus_session": 2.0
+  },
+  "microbenchmark": {
+    "scope": "8-frame public Fbank -> CAMPPlus only, 3 warmups, interleaved 15 measurements, excludes loading/preprocessing, one CPU thread",
+    "default_median_ms": 7.192276000751008,
+    "preserve_padding_median_ms": 7.22873199993046,
+    "interpretation": "Observed overhead is within local timing variation; not an end-to-end synthesis benchmark."
+  },
+  "offline_execution_verified": true
+}

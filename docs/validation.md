@@ -6,6 +6,13 @@ finite waveform is useful evidence but does not establish numerical equivalence.
 
 ## Ordinary changes
 
+Prepare the pinned external frontend runtime with
+`python scripts/install_onnxruntime.py` (Python 3.12+) and set `ORT_DYLIB_PATH` to
+the reported library. The default workspace includes the native facade and its
+ONNX frontend feature, so the small pooling regression requires that runtime.
+The runtime installer verifies the official archive digest; it does not download
+model weights. CI performs this preparation explicitly before the Rust gate.
+
 ```sh
 python scripts/ci.py rust
 python scripts/ci.py bindings --kind python
@@ -90,39 +97,99 @@ the same runtime's HiFT waveform passed on 15,360 samples, with maximum absolute
 error `2.504e-6`. These
 observations do not certify every intermediate tensor, input, language or device.
 
-CosyVoice's complete native flow path is implemented. Its strict float32
-acceptance remains input-dependent. The historical official-runtime default
-comparison failed on 124 of 1,280 mel values (`max_abs=1.201e-3`). Subsequent
-source review corrected two real semantics issues locally: DiT now respects
-padding masks and clears masked attention projections; RoPE evaluates power and
-reciprocal in float32, matching upstream. No Candle fork or full-model float64
-promotion is involved.
+The [frontend regression record](../tests/fixtures/cosyvoice-frontend-validation.json)
+uses 2,401 samples of public deterministic PCM, including both STFT boundaries
+and a fractional resampling tail. Resampled PCM, Kaldi Fbank, mean-normalized
+Fbank, Matcha mel, Whisper mel and the 192-value CAMPPlus embedding all pass the
+same strict threshold. The embedding maximum absolute error is `1.812e-5`.
+Small official feature tensors are checked into the model crate for ordinary
+tests; pretrained CAMPPlus weights remain external.
 
-The [flow diagnosis](../tests/fixtures/cosyvoice-flow-diagnostics.json) records
-two token slices of the same public analytic input after those repairs. For
-8 prompt + 8 target tokens, 51 of 1,280 mel values still fail the original gate
-(`max_abs=1.125e-3`, `RMSE=1.218e-4`). The official implementation itself fails
-on 94 values when switching only CPU attention from SDPA to MATH. For 4 + 4
-tokens, all 640 mel values pass against both official backends.
+This comparison exposed a semantic ONNX Runtime 1.24.4 optimizer defect:
+`Pad_Fusion` changes the divisor in CAMPPlus's final partial average-pooling
+windows. The production CAMPPlus session disables only that rewrite. An authored
+small ONNX graph reproduces the defect without weights and exercises the same
+session configuration in the default workspace gate. RustFFT, float32 Hann
+windows and reflection padding also align the frontend with the pinned oracle.
+See the model's [source provenance](../crates/tts-cosyvoice/UPSTREAM.md) for the
+affected operations. These results do not establish full synthesis parity.
 
-First-step layer traces locate the divergence: conditioning, input embeddings,
-and the first two blocks pass; both Candle-versus-official and official
-SDPA-versus-MATH first exceed the gate in block 2 (zero based). Later residual
-outputs amplify the differences before final normalization reduces them. This
-supports float32 attention/reduction roundoff accumulation as the explanation
-for the remaining observed error, rather than a missing operator or stage. It
-is not proof for every input. All failed comparisons remain recorded, and the
-threshold is unchanged. Use `export_cosyvoice_flow.py --layerwise` and pass
-`--layerwise` as the final argument to `flow_oracle` to reproduce the optional
-first-step traces; normal evaluation avoids that extra replay and artifact size.
+CosyVoice's complete native Flow path is implemented, but **strict full-Flow
+parity remains unresolved**. The latest
+[revalidation](../tests/fixtures/cosyvoice-flow-revalidation.json) compares four
+slices of public analytic conditioning, with identical exported noise and
+unchanged `atol=1e-5, rtol=1e-4`:
 
-A separate earlier coupled check feeds each implementation's own flow mel into HiFT with
-identical serialized source noise. On this 7,680-sample public fixture, Candle
-versus official SDPA measured waveform RMSE `1.624e-4` and SNR `53.97 dB`; official
-SDPA versus MATH measured RMSE `1.557e-3` and SNR `34.33 dB`. This bounds one
-observed downstream effect, not perceptual quality or universal equivalence.
-That coupled waveform failed strict elementwise parity; it has not been rerun
-with the subsequent RoPE/padding repairs.
+| Prompt + target tokens | Failing mel values before | Failing mel values after |
+| --- | --- | --- |
+| 8 + 8 | 18 / 1,280 | 4 / 1,280 |
+| 4 + 4 | 2 / 640 | 2 / 640 |
+| 5 + 11 | 37 / 1,760 | 56 / 1,760 |
+| 1 + 1 | 0 / 160 | 0 / 160 |
+
+The retained LayerNorm and Mish changes have independent operator evidence:
+Welford moments preserve small variance at large offsets, and `log1p` preserves
+Mish's negative tail. They do not guarantee smaller complete-model error; the
+asymmetric case above worsens. Both extensions stay in the model crate without
+a Candle fork, whole-model float64 promotion or accelerator-to-CPU fallback.
+
+The float32 Euler time grid also follows the pinned CPU `torch.linspace`
+rounding contract. Independent bit-pattern fixtures cover 1, 3, 7, 10 and 50
+steps; the previous one-sided float64 construction differed at non-default
+counts. The ten-step default is bit-for-bit unchanged, so this grid correction
+does not change the full-Flow results above. Low-precision grid behavior is
+preserved without claiming new half-precision parity.
+
+Frozen block diagnostics show that Q/K/V and adaptive projections individually
+pass the strict threshold, while their small differences amplify through the
+checkpoint's large attention logits. The complete block still fails. This
+evidence supports a floating-point reduction sensitivity; it does not establish
+a missing operator or justify a parity claim. A projection experiment that
+reproduced the pinned MKL reduction on frozen inputs was removed because it
+added substantial cost without stable complete-model gains.
+
+A later isolated experiment used standard MKL 2022.2 SGEMM with the pinned
+Python Linear's bias/flattening semantics. Although frozen conditioning and
+Q/K/V projections matched bit-for-bit, the complete 8+8 case still failed:
+12 / 1,280 values, maximum error `5.779e-4`, RMSE `8.724e-5`. Smaller maximum
+error and RMSE did not imply strict success. That experimental backend is not
+part of the library. Frozen attention checks likewise ruled out changing AV
+normalization order as a sufficient repair. Keep these operator-level and
+composed-model conclusions separate when evaluating another backend.
+
+Use `export_cosyvoice_flow.py --layerwise` and `flow_oracle ... --layerwise` for
+first-step layer traces. Use `--block-trace INDEX` with the exporter and
+`flow_block_oracle` for independent frozen operator inputs; reproduction commands
+are included in the revalidation record. Normal evaluation avoids tracing cost.
+
+The earlier [flow diagnosis](../tests/fixtures/cosyvoice-flow-diagnostics.json)
+remains historical evidence. Its inputs have different hashes, so its 51 / 1,280
+failure count is not the before value for the table above. That record also
+shows numerical variation between the official CPU SDPA and MATH kernels;
+variation in the oracle does not turn a failed candidate comparison into a pass.
+
+The current [coupled waveform check](../tests/fixtures/cosyvoice-coupled-waveform-validation.json)
+feeds each implementation's own Flow mel into HiFT with identical serialized
+source noise. Both current inputs fail the unchanged waveform threshold:
+
+| Prompt + target tokens | Failing waveform values | RMSE | Error SNR |
+| --- | --- | --- | --- |
+| 8 + 8 | 6,195 / 7,680 | `6.845e-4` | 29.39 dB |
+| 5 + 11 | 6,469 / 10,560 | `2.677e-4` | 34.71 dB |
+
+The same-mel controls, which give Rust HiFT the official Flow output, both pass;
+their maximum absolute errors are `1.188e-6` and `1.233e-6`. This isolates a
+measurable downstream effect from the remaining Flow differences. It does not
+establish listening quality or permit a full synthesis parity claim.
+
+A separate [official attention control](../tests/fixtures/cosyvoice-attention-backend-control.json)
+uses the same current inputs and noise, changing only the official Flow attention
+backend from default to MATH before running official HiFT. Both resulting
+waveforms also fail elementwise parity, with SNR 35.17 dB and 34.76 dB respectively.
+The Rust result is worse on the first case and close on the second; this control
+demonstrates sensitivity to arithmetic order, not equivalence or an exemption
+from the candidate's failing gate. Earlier coupled metrics belong to different
+input hashes and are retained only in the historical diagnosis.
 
 ## Strict comparisons
 
@@ -160,6 +227,44 @@ Compare intermediates in order: frontend features → speaker/conditioning → L
 logits or fixed codes → acoustic decoder → waveform. This distinguishes a token
 boundary error from a numeric kernel difference. A waveform test from one short
 utterance does not certify every language, model size, sampling mode or stream.
+
+## Separate speech-quality audits
+
+The official [CV3-Eval protocol](https://github.com/QwenAudio/CV3-Eval/tree/68b7682a410d048308d1a12f2fbc266770cd23d5)
+measures content consistency with CER/WER, speaker similarity with ERes2Net,
+and audio quality with DNSMOS. Its specified ASR models are Paraformer for
+Chinese and Whisper large-v3 for English. These measure different properties
+from tensor parity; none provides a cross-backend floating-point tolerance or
+turns a failed numerical comparison into a passing one.
+
+The pinned official [`export_onnx.py`](https://github.com/QwenAudio/CosyVoice/blob/074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc/cosyvoice/bin/export_onnx.py)
+does perform a local numerical check: ten randomly sized single-estimator
+inputs use `atol=1e-4, rtol=1e-2`. That export check does not cover the complete
+Euler solver, HiFT or final waveform. It is a separate scope and does not replace
+this port's recorded full-Flow comparison contract.
+
+For a separate paired audit, freeze the public sample manifest, reference
+transcripts, text normalization, model/evaluator revisions, weight hashes and
+decoding settings before generating either implementation's output. First
+compare acoustic decoding with identical speech tokens and actual noise; then
+evaluate the complete synthesis pipelines. Record per-sample scores for both
+implementations, their paired differences and the sample counts. Missing output,
+an evaluator exception or a missing score must fail the requested audit rather
+than silently shrink its denominator.
+
+Preserve the evaluator's primary aggregation; filtered or clipped error rates
+are additional diagnostics. Speech-quality samples must reach a natural end of
+utterance. A token-capped numerical fixture or a short analytic waveform is not
+a quality sample. Greedy decoding is useful for port diagnosis but differs from
+the official default sampling configuration and must be labeled accordingly.
+
+Use an independent speaker evaluator rather than the conditioning encoder alone.
+Do not call a short transcription smoke check the full official benchmark, or
+treat one short utterance as statistical evidence of equal quality. Thresholds,
+sample coverage and any non-inferiority margin need an explicit justification
+before inspecting candidate scores. Quality evaluation supplements the existing
+strict gate; it does not relax it. No complete CV3-Eval quality audit is claimed
+by the numerical records above.
 
 ## Benchmarking
 

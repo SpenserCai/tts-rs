@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-15",
+  "scope": "Control experiment: fixed official Flow input/noise, changing only its PyTorch attention backend from default to math, followed by official HiFT with shared phase/sine/UV buffers. Analytic conditioning; excludes LLM and any listening or voice-quality claim.",
+  "passed": false,
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "acceptance": "Strict elementwise comparison; RMSE/SNR are descriptive and do not alter the gate",
+  "device": "cpu",
+  "dtype": "float32",
+  "hift_f0_dtype": "float64",
+  "runtime": {
+    "torch": "2.3.1+cpu",
+    "torchaudio": "2.3.1+cpu",
+    "transformers": "4.51.3",
+    "x-transformers": "2.11.24"
+  },
+  "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+  "matcha_revision": "dd9105b34bf2be2230f4aa1e4769fb586a3c824e",
+  "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+  "flow_weights_sha256": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+  "hift_weights_sha256": "b279d7641eb97ae55b3b540cfba4f953c26492a2df758328a89a4d007ab87a65",
+  "input_features_sha256": "ea5d342ba66b93673150393b1b57de11f377b1f70f15ebc5a775aee11049c6e4",
+  "tensor_hash_encoding": "SHA256 of UTF-8 json.dumps(document[\"tensors\"], sort_keys=True, separators=(\",\", \":\")); metadata excluded",
+  "timesteps": 10,
+  "sample_rate": 24000,
+  "offline_execution": "Each official Flow and HiFT process executed under offline_exec.py Linux network-denial seccomp",
+  "cases": [
+    {
+      "name": "8+8",
+      "input_tensors_sha256": "078fc6b6d1402b3ce2a72df573741a56e81df39bc4b6dbaed30e289c67167c73",
+      "identical_input_tensors_verified": true,
+      "flow_noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "shared_hift_source_noise_sha256": "1da28dae09f6a5adc73ab552f7f16f59ca059f2b4098f1cb48c2f8da0c77ab5b",
+      "identical_flow_and_hift_noise_verified": true,
+      "default_flow_tensors_sha256": "06b2b61a746e0a0130ce1957092e816eacc38c875a086b19f9274fb50326f9d2",
+      "math_flow_tensors_sha256": "606809f3664479be5218b3f925c409ea0fbf78ae37018b27510b372f1336d5ca",
+      "default_waveform_tensors_sha256": "bb354f453e1b9c46cc7301685fb18b01070c750a4094b3a307f21ebee1b9a15d",
+      "math_waveform_tensors_sha256": "a4eacb43f291d3bb9acb920e156c0452c58c733a14d32148f049f96646aa1673",
+      "official_default_vs_official_math_flow": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1280,
+            "max_absolute_error": 0.0010733604431152344,
+            "mean_absolute_error": 7.003927603363991e-05,
+            "root_mean_square_error": 9.689311313905854e-05,
+            "max_relative_error": 0.00027752229306656623,
+            "cosine_similarity": 0.9999999997136054,
+            "failing_elements": 9,
+            "first_failing_indices": [
+              67,
+              135,
+              138,
+              141,
+              154,
+              170,
+              1268,
+              1269,
+              1270
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "official_default_vs_official_math_waveform": {
+        "passed": false,
+        "tensors": {
+          "waveform": {
+            "passed": false,
+            "elements": 7680,
+            "max_absolute_error": 0.0017213821411132812,
+            "mean_absolute_error": 0.00018629751846490627,
+            "root_mean_square_error": 0.00035185951950839176,
+            "max_relative_error": 24.358177545123528,
+            "cosine_similarity": 0.9998480362139266,
+            "failing_elements": 5808,
+            "first_failing_indices": [
+              1101,
+              1131,
+              1134,
+              1144,
+              1145,
+              1148,
+              1151,
+              1158,
+              1169,
+              1177,
+              1178,
+              1187,
+              1203,
+              1204,
+              1206,
+              1207
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)",
+            "reference_rms": 0.020181957127050794,
+            "reference_peak": 0.08747995644807816,
+            "identical_waveform": false,
+            "snr_db": 35.1718794792236
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    {
+      "name": "5+11",
+      "input_tensors_sha256": "88b4bd30fd3cc8b32e336e9e2f480dc3a890b278d83c478b43fc6d0383b29b9a",
+      "identical_input_tensors_verified": true,
+      "flow_noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "shared_hift_source_noise_sha256": "b8c47b6a9c2a1baf1a32d7c6236905381a222c63dd98342091092eee557694ea",
+      "identical_flow_and_hift_noise_verified": true,
+      "default_flow_tensors_sha256": "907a77172bf158c99af58f306ebf2009aa17658d6659631f18bec77972117d07",
+      "math_flow_tensors_sha256": "59a5737f8c2aef13cf9496668b576ee7718f52fd6f1317a3888879cff2776b46",
+      "default_waveform_tensors_sha256": "29fdd90ce9945e5e161c3e6e640ef43c330bfc782a0e451fde496137888fbaa4",
+      "math_waveform_tensors_sha256": "5e34120a8680fa7b2735144f555613dfca9d7afdc6b694acb612552a03f60806",
+      "official_default_vs_official_math_flow": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1760,
+            "max_absolute_error": 0.0007200241088867188,
+            "mean_absolute_error": 9.079870175231586e-05,
+            "root_mean_square_error": 0.00013166164301422337,
+            "max_relative_error": 0.00032992461251962453,
+            "cosine_similarity": 0.999999999530406,
+            "failing_elements": 65,
+            "first_failing_indices": [
+              4,
+              5,
+              16,
+              38,
+              94,
+              95,
+              96,
+              97,
+              107,
+              108,
+              109,
+              116,
+              117,
+              118,
+              119,
+              139
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "official_default_vs_official_math_waveform": {
+        "passed": false,
+        "tensors": {
+          "waveform": {
+            "passed": false,
+            "elements": 10560,
+            "max_absolute_error": 0.0013656024530064315,
+            "mean_absolute_error": 0.00015366002404162147,
+            "root_mean_square_error": 0.0002660806540117506,
+            "max_relative_error": 395.7547148622648,
+            "cosine_similarity": 0.9998330596667222,
+            "failing_elements": 6550,
+            "first_failing_indices": [
+              2016,
+              2134,
+              2204,
+              2382,
+              2426,
+              2432,
+              2543,
+              3499,
+              3507,
+              3508,
+              3514,
+              3519,
+              3545,
+              3546,
+              3547,
+              3548
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)",
+            "reference_rms": 0.014562384848478646,
+            "reference_peak": 0.06579776853322983,
+            "identical_waveform": false,
+            "snr_db": 34.76438409734271
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    }
+  ],
+  "interpretation": [
+    "On these identical current inputs, the official implementation itself does not pass the requested elementwise gate after switching attention kernels.",
+    "This confirms sensitivity to the attention arithmetic path; it does not establish that Rust and official arithmetic are equivalent or that the audible effect is negligible.",
+    "The Rust Flow/HiFT comparison remains independently failing and is not reclassified by this control experiment.",
+    "Earlier historical diagnostics used different input hashes and were not used for this comparison."
+  ],
+  "reproduction": {
+    "flow": "Export identical public analytic features with export_cosyvoice_flow.py --prompt-tokens PROMPT --tokens TARGET --attention-backend math; compare with the same case exported using default.",
+    "hift": "Run export_cosyvoice_stages.py --mel-input MATH/reference.json --frames TARGET_TIMES_TWO --source-noise DEFAULT/coupled-hift/source-noise.safetensors; compare waveform against DEFAULT/coupled-hift/reference.json.",
+    "execution": "Run both exporters with the pinned CosyVoice Python environment through scripts/reference/offline_exec.py --; prepare dependencies first.",
+    "comparison": "scripts/reference/compare_tensors.py REFERENCE CANDIDATE --atol 1e-5 --rtol 1e-4 --output REPORT"
+  }
+}

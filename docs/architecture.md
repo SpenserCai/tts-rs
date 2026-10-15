@@ -94,3 +94,12 @@ oracle. Integrate its typed payload through an adapter. Add a binding only when
 it can call the same tested Rust API; do not fork numerical logic into a language
 wrapper. Add a shared acoustic primitive after two real callers demonstrate
 identical required behavior.
+
+A numerical primitive that needs different semantics from Candle belongs beside
+the model that requires it. Keep its input shape, dtype, device and accumulation
+rules explicit, and test the primitive against the pinned upstream operation
+before checking the composed model. Prefer existing tensor operations; a local
+kernel is justified by a measured semantic or numerical gap, not by the name of
+an upstream operator. Such extensions do not require a Candle fork or a second
+inference backend. CPU-only preprocessing remains at the frontend boundary;
+model operations must not silently move accelerator tensors to the host.

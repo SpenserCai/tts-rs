@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--tokens", type=int, default=8)
     parser.add_argument("--attention-backend", choices=["default", "math"], default="default")
     parser.add_argument("--layerwise", action="store_true", help="Export first-step DiT layer outputs for numerical diagnosis")
+    parser.add_argument("--block-trace", type=int, choices=range(22), metavar="0..21", help="Export frozen first-step block inputs and operators for isolated diagnosis")
     args = parser.parse_args()
     source = args.source.resolve()
     matcha = source / "third_party" / "Matcha-TTS"
@@ -80,6 +81,29 @@ def main() -> None:
         handles.append(model.get_submodule(name).register_forward_hook(
             lambda _module, _inputs, result, key=name: capture(key, result)
         ))
+    block_records = {}
+    if args.block_trace is not None:
+        block = model.decoder.estimator.transformer_blocks[args.block_trace]
+
+        def capture_block_inputs(_module, inputs, kwargs):
+            if "input" not in block_records:
+                block_records["input"], block_records["time"] = [value.detach() for value in inputs[:2]]
+                block_records["rope"] = kwargs["rope"][0].detach()
+
+        handles.append(block.register_forward_pre_hook(capture_block_inputs, with_kwargs=True))
+        names = ["attn_norm.norm", "attn_norm.linear", "attn.to_q", "attn.to_k", "attn.to_v",
+                 "attn", "ff_norm", "ff.ff.0.0", "ff.ff.0.1", "ff"]
+        for name in names:
+            def capture_operator(_module, inputs, output, key=name):
+                if key not in block_records:
+                    block_records[key] = output.detach()
+                    if inputs:
+                        block_records[key + ".input"] = inputs[0].detach()
+            handles.append(block.get_submodule(name).register_forward_hook(capture_operator))
+        def capture_block_output(_module, _inputs, output):
+            if "output" not in block_records:
+                block_records["output"] = output.detach()
+        handles.append(block.register_forward_hook(capture_block_output))
     from torch.nn.attention import SDPBackend, sdpa_kernel
     attention = sdpa_kernel(SDPBackend.MATH) if args.attention_backend == "math" else contextlib.nullcontext()
     with torch.inference_mode(), attention:
@@ -103,12 +127,18 @@ def main() -> None:
         "flow_noise_sha256": sha256(args.output / "flow-noise.safetensors"),
         "timesteps": 10, "streaming": False, "finalize": True,
         "attention_backend": args.attention_backend, "layerwise_trace": args.layerwise,
+        "block_trace": args.block_trace,
         "scope": "official token-conditioned flow; excludes LLM and HiFT",
         "randomness": "exact official decoder.rand_noise tensor exported for Candle replay",
     }
     write_json(args.output / "input.json", tensor_document(tensors, metadata))
     write_json(args.output / "reference.json", tensor_document({"mel": result}, metadata))
     write_json(args.output / "intermediates.json", tensor_document(intermediate, metadata))
+    if block_records:
+        write_json(args.output / "block-input.json", tensor_document(block_records, metadata))
+        comparisons = ["attn_norm.linear", "attn_norm.linear.input", "attn.to_q.input", "attn.to_q", "attn.to_k", "attn.to_v", "attn", "ff", "output"]
+        write_json(args.output / "block-reference.json", tensor_document(
+            {name: block_records[name] for name in comparisons}, metadata))
     write_json(args.output / "manifest.json", metadata)
     print(f"Exported official flow: {args.tokens} target tokens -> {result.shape[-1]} mel frames")
 

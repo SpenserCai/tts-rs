@@ -5,6 +5,11 @@ prompt validation, and resampling run through `AsyncTask` on libuv workers.
 These methods return promises; model inference does not block the JavaScript
 event loop. Calls on one engine are serialized to protect its inference state.
 
+CosyVoice3 is experimental: full-Flow numerical parity remains unresolved, and
+reported output artifacts include an unrelated leading sound and elongated
+endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#tts-rs)
+before using that model. The binding uses the same model implementation as Rust.
+
 ```sh
 npm install @spensercai/tts-rs
 ```

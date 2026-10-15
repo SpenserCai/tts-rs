@@ -1,0 +1,508 @@
+{
+  "schema_version": 1,
+  "observed_date": "2026-10-15",
+  "kind": "Scoped pretrained CosyVoice3 Flow CPU float32 revalidation; strict failures retained",
+  "passed": false,
+  "scope": "Four prompt/target slices of one public analytic conditioning sequence; not speech-corpus, identity, perceptual, full-pipeline or accelerator validation",
+  "atol": 1e-05,
+  "rtol": 0.0001,
+  "timesteps": 10,
+  "attention_backend": "official default",
+  "device": "cpu",
+  "dtype": "float32",
+  "streaming": false,
+  "runtime": {
+    "torch": "2.3.1+cpu",
+    "torchaudio": "2.3.1+cpu",
+    "transformers": "4.51.3",
+    "x-transformers": "2.11.24"
+  },
+  "platform": {
+    "platform": "Linux-6.18.44-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor"
+  },
+  "candle_version": "0.9.2",
+  "source_revision": "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc",
+  "matcha_revision": "dd9105b34bf2be2230f4aa1e4769fb586a3c824e",
+  "model_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+  "weights_sha256": "a6fab32a7825e5b0bc855ddd948f8db9370b0a786fbc249caa4595e95b608e4b",
+  "converted_weights_sha256": "d1de105325965bb1492970e1bd42ed062073476680d7f7fa5b7b02bee5663bd3",
+  "input_features_sha256": "ea5d342ba66b93673150393b1b57de11f377b1f70f15ebc5a775aee11049c6e4",
+  "input_provenance": "scripts/reference/cosyvoice_pretrained.py analytic_features(); no recording or private voice data",
+  "tensor_hash_encoding": "SHA256 of UTF-8 json.dumps(document[\"tensors\"], sort_keys=True, separators=(\",\", \":\")); metadata excluded",
+  "offline_execution": "Linux seccomp denies network syscalls before each official and Rust model process",
+  "comparison_identity": {
+    "before": "Saved pre-LayerNorm/pre-Mish release flow_oracle binary, replayed on exactly the same current inputs and noise as final",
+    "final": "Stable Welford LayerNorm and log1p Mish; original Candle Linear and GELU retained",
+    "before_binary_sha256": "3095add4e2812a2f4dc42e858095d822ddfa5d16082957aee14ed671ae51da65",
+    "final_binary_sha256": "6dd1caf6bc01bef593e7caf95ae3a13936dd20e866b7b41e2ffe2e4d663bd50e",
+    "base_repository_commit": "da7ebff4772c26e21737a2dffc5d1787afbdb3f0",
+    "historical_case_is_distinct": "The earlier 51/1280 case in cosyvoice-flow-diagnostics.json has different input hashes and could not be recovered after workspace reset; no before/after claim is made against that case."
+  },
+  "implementation_sha256": {
+    "crates/tts-cosyvoice/src/activations.rs": "230878f829bbc60847970bd3b9b3f74e656f9eebf91f605db56418c0b347e5b7",
+    "crates/tts-cosyvoice/src/flow/normalization.rs": "87bdec6c42784db710c1f9d63f81681e0f7a2df622c93b3233b68b4aa15bc568",
+    "crates/tts-cosyvoice/src/flow/dit.rs": "c8adbf5a78c5bbcdc865d33990b86062b6cf7a62683ae9cdf247d23ba072a60f",
+    "crates/tts-cosyvoice/src/flow/embeddings.rs": "fbd67414ed196c62f8d5b7b0cfdbfe2bf731aeb43a41827cf5630866d0913401",
+    "crates/tts-cosyvoice/examples/flow_block_oracle.rs": "f2ecc1a47573575ba2a336ce1d8acb874166fc75c8740bcdce675d5300fc7231",
+    "scripts/reference/export_cosyvoice_flow.py": "796deb791f8034b3cce106de1f0f469b3011a038896dbb471f1f411fa1ac2434",
+    "scripts/reference/cosyvoice_pretrained.py": "9173a2bc7f3ffbd759f948579599babc7bd73a391dc701a3ca970499e6306a56"
+  },
+  "retained_changes": [
+    "Model-local CPU float32 no-affine LayerNorm with Welford/cascade/FMA moments and reciprocal multiplication; accelerator tensors remain on device, with no CPU parity claim",
+    "Mish uses log1p(exp(x)) on CPU with an overflow-safe positive tail; a same-device tensor expression preserves the small negative tail on accelerators",
+    "Optional first-step block exporter and isolated Rust block diagnostic; no new public inference API"
+  ],
+  "cases": [
+    {
+      "name": "8+8",
+      "prompt_tokens": 8,
+      "target_tokens": 8,
+      "input_tensors_sha256": "078fc6b6d1402b3ce2a72df573741a56e81df39bc4b6dbaed30e289c67167c73",
+      "reference_tensors_sha256": "06b2b61a746e0a0130ce1957092e816eacc38c875a086b19f9274fb50326f9d2",
+      "before_tensors_sha256": "7474926b9c65b9ba8788cee915b1dc471b4293c57e87be49520cd7da69514ba1",
+      "final_tensors_sha256": "81089226728b115e52b0cf729e4526b288d7fc67cd03a8b2e0878b8e4b2f721c",
+      "noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "before": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1280,
+            "max_absolute_error": 0.0007753372192382812,
+            "mean_absolute_error": 0.00011921576224267482,
+            "root_mean_square_error": 0.00014204996750808935,
+            "max_relative_error": 0.00037571916515590403,
+            "cosine_similarity": 0.9999999996969905,
+            "failing_elements": 18,
+            "first_failing_indices": [
+              77,
+              134,
+              136,
+              137,
+              138,
+              149,
+              150,
+              151,
+              152,
+              156,
+              157,
+              158,
+              159,
+              165,
+              170,
+              175
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "final": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1280,
+            "max_absolute_error": 0.0008668899536132812,
+            "mean_absolute_error": 8.385498076677323e-05,
+            "root_mean_square_error": 0.00010805023140637404,
+            "max_relative_error": 0.00019522581602619246,
+            "cosine_similarity": 0.9999999997394269,
+            "failing_elements": 4,
+            "first_failing_indices": [
+              138,
+              154,
+              170,
+              1269
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    {
+      "name": "4+4",
+      "prompt_tokens": 4,
+      "target_tokens": 4,
+      "input_tensors_sha256": "1d25f34fedc6f47e156cc77d63d438758cf878af4ae425bdb1f2fd63b6d9c6e1",
+      "reference_tensors_sha256": "901b435a282c555954d740af8e986a1f2eed4981ddde6e743ca41eaf00ecf36a",
+      "before_tensors_sha256": "2deb77563f6eb45acd935718fec4d879ef1abb928cb01aa6a7bf6258cbd9385a",
+      "final_tensors_sha256": "ed35388d1217ad2b8e8ad13150933d81d7373a3c36b26a688f695cc013240489",
+      "noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "before": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 640,
+            "max_absolute_error": 0.0003018379211425781,
+            "mean_absolute_error": 9.657088667154312e-05,
+            "root_mean_square_error": 0.00011067807268108215,
+            "max_relative_error": 0.00014597940883182342,
+            "cosine_similarity": 0.9999999998654123,
+            "failing_elements": 2,
+            "first_failing_indices": [
+              79,
+              87
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "final": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 640,
+            "max_absolute_error": 0.00030231475830078125,
+            "mean_absolute_error": 7.583722472190857e-05,
+            "root_mean_square_error": 9.190146605180401e-05,
+            "max_relative_error": 0.00013347527186376005,
+            "cosine_similarity": 0.9999999998300005,
+            "failing_elements": 2,
+            "first_failing_indices": [
+              78,
+              79
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    {
+      "name": "5+11",
+      "prompt_tokens": 5,
+      "target_tokens": 11,
+      "input_tensors_sha256": "88b4bd30fd3cc8b32e336e9e2f480dc3a890b278d83c478b43fc6d0383b29b9a",
+      "reference_tensors_sha256": "907a77172bf158c99af58f306ebf2009aa17658d6659631f18bec77972117d07",
+      "before_tensors_sha256": "76632228bf10c9ffd81fc14fb7ec06dbc8c5cf894daee65ec961b30b0059d3ff",
+      "final_tensors_sha256": "80170ec9b856c15531e4f7c480d4d7b8a6f763817548a981029e300dd8d75b5b",
+      "noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "before": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1760,
+            "max_absolute_error": 0.0009341239929199219,
+            "mean_absolute_error": 8.027404546737671e-05,
+            "root_mean_square_error": 0.00011948764547468765,
+            "max_relative_error": 0.00039967635306607655,
+            "cosine_similarity": 0.9999999996230382,
+            "failing_elements": 37,
+            "first_failing_indices": [
+              20,
+              77,
+              78,
+              107,
+              108,
+              109,
+              112,
+              116,
+              117,
+              119,
+              121,
+              125,
+              126,
+              132,
+              179,
+              189
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "final": {
+        "passed": false,
+        "tensors": {
+          "mel": {
+            "passed": false,
+            "elements": 1760,
+            "max_absolute_error": 0.0009737014770507812,
+            "mean_absolute_error": 9.071352806958285e-05,
+            "root_mean_square_error": 0.0001286419450368035,
+            "max_relative_error": 0.0003498386835923259,
+            "cosine_similarity": 0.9999999995499791,
+            "failing_elements": 56,
+            "first_failing_indices": [
+              94,
+              95,
+              96,
+              97,
+              104,
+              105,
+              106,
+              116,
+              117,
+              118,
+              126,
+              127,
+              139,
+              140,
+              156,
+              158
+            ],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    {
+      "name": "1+1",
+      "prompt_tokens": 1,
+      "target_tokens": 1,
+      "input_tensors_sha256": "fb0942f7915aaecf6028adeb510bd933df5d80cafddb798f539dbb0b2cc62ec7",
+      "reference_tensors_sha256": "5d4a3449f73bff1be4b25f46767896ed42430363d6a18a605856659072f4f302",
+      "before_tensors_sha256": "88d7763a864c446d3b4d22026adb2d009dc3dac60e3699f6e0e65280ce37aad3",
+      "final_tensors_sha256": "749af2eb7fb1fb4616a1db95e24068f8c4840641e8e15af6414174548b75fa1c",
+      "noise_sha256": "87b13cdfae8085228bbcf249d62cf6cb5446dfcf2bc92db0e5b62c21cf4b2eae",
+      "before": {
+        "passed": true,
+        "tensors": {
+          "mel": {
+            "passed": true,
+            "elements": 160,
+            "max_absolute_error": 0.00030159950256347656,
+            "mean_absolute_error": 4.409700632095337e-05,
+            "root_mean_square_error": 6.601571354354006e-05,
+            "max_relative_error": 8.801966742064383e-05,
+            "cosine_similarity": 0.9999999998753027,
+            "failing_elements": 0,
+            "first_failing_indices": [],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      },
+      "final": {
+        "passed": true,
+        "tensors": {
+          "mel": {
+            "passed": true,
+            "elements": 160,
+            "max_absolute_error": 9.632110595703125e-05,
+            "mean_absolute_error": 2.896338701248169e-05,
+            "root_mean_square_error": 3.437837078371175e-05,
+            "max_relative_error": 3.0899091673780854e-05,
+            "cosine_similarity": 0.9999999999663863,
+            "failing_elements": 0,
+            "first_failing_indices": [],
+            "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+          }
+        },
+        "missing": [],
+        "unexpected": []
+      }
+    }
+  ],
+  "frozen_block_diagnostic": {
+    "block": 2,
+    "input_tensors_sha256": "9c84ec457d6b1bed91615f8a170344c99c2a22daa27f1bbeb92dacb3adb5fb86",
+    "scope": "Each sub-operator receives its own frozen official input; full block receives frozen official hidden/time inputs",
+    "final": {
+      "passed": false,
+      "tensors": {
+        "attn": {
+          "passed": false,
+          "elements": 65536,
+          "max_absolute_error": 0.00967705249786377,
+          "mean_absolute_error": 0.0005752768767366412,
+          "root_mean_square_error": 0.0009384965059172411,
+          "max_relative_error": 118.03771186440677,
+          "cosine_similarity": 0.9999998793594309,
+          "failing_elements": 50553,
+          "first_failing_indices": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn.to_k": {
+          "passed": true,
+          "elements": 65536,
+          "max_absolute_error": 0.00048828125,
+          "mean_absolute_error": 2.6354216856816493e-05,
+          "root_mean_square_error": 3.7467418550719175e-05,
+          "max_relative_error": 9.051164697042148e-05,
+          "cosine_similarity": 0.9999999999999568,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn.to_q": {
+          "passed": true,
+          "elements": 65536,
+          "max_absolute_error": 8.392333984375e-05,
+          "mean_absolute_error": 1.038878917825059e-05,
+          "root_mean_square_error": 1.4508931509621629e-05,
+          "max_relative_error": 0.0002513460793351771,
+          "cosine_similarity": 0.9999999999999664,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn.to_q.input": {
+          "passed": true,
+          "elements": 65536,
+          "max_absolute_error": 3.4332275390625e-05,
+          "mean_absolute_error": 2.858529564164769e-07,
+          "root_mean_square_error": 1.0952931671558026e-06,
+          "max_relative_error": 0.0005235430777788685,
+          "cosine_similarity": 0.9999999999998979,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn.to_v": {
+          "passed": true,
+          "elements": 65536,
+          "max_absolute_error": 1.138448715209961e-05,
+          "mean_absolute_error": 9.80636641223498e-07,
+          "root_mean_square_error": 1.330652557472348e-06,
+          "max_relative_error": 0.17745535714285715,
+          "cosine_similarity": 0.999999999998866,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn_norm.linear": {
+          "passed": true,
+          "elements": 12288,
+          "max_absolute_error": 5.7220458984375e-06,
+          "mean_absolute_error": 9.766281057939825e-08,
+          "root_mean_square_error": 2.0791891442673414e-07,
+          "max_relative_error": 0.005871415989822879,
+          "cosine_similarity": 0.9999999999999714,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "attn_norm.linear.input": {
+          "passed": true,
+          "elements": 2048,
+          "max_absolute_error": 2.9802322387695312e-08,
+          "mean_absolute_error": 1.5552359400317073e-10,
+          "root_mean_square_error": 1.5436008812599023e-09,
+          "max_relative_error": 1.4815108922162307e-07,
+          "cosine_similarity": 0.9999999999999999,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "ff": {
+          "passed": true,
+          "elements": 65536,
+          "max_absolute_error": 7.867813110351562e-06,
+          "mean_absolute_error": 6.038637279104364e-07,
+          "root_mean_square_error": 8.330862526068273e-07,
+          "max_relative_error": 0.022156174007025128,
+          "cosine_similarity": 0.9999999999997948,
+          "failing_elements": 0,
+          "first_failing_indices": [],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        },
+        "output": {
+          "passed": false,
+          "elements": 65536,
+          "max_absolute_error": 0.0011248588562011719,
+          "mean_absolute_error": 1.5905929336354485e-05,
+          "root_mean_square_error": 3.245850366722259e-05,
+          "max_relative_error": 116.28571428571429,
+          "cosine_similarity": 0.999999999950346,
+          "failing_elements": 5282,
+          "first_failing_indices": [
+            2,
+            4,
+            5,
+            9,
+            25,
+            26,
+            30,
+            41,
+            46,
+            53,
+            56,
+            59,
+            64,
+            65,
+            67,
+            72
+          ],
+          "comparison": "abs(candidate-reference) <= atol + rtol*abs(reference)"
+        }
+      },
+      "missing": [],
+      "unexpected": []
+    },
+    "interpretation": "Q/K/V and adaptive projections individually pass strict thresholds; their small errors amplify in attention and the complete block still fails"
+  },
+  "discarded_experiments": [
+    {
+      "name": "192-wide CPU projection reduction",
+      "included_in_production": false,
+      "reason": "Observed pinned MKL reduction matched 589824 frozen Q/K/V outputs exactly, but did not give stable whole-Flow gains, was hardware-runtime-specific, and materially increased single-run latency. The operator and all includes were removed."
+    },
+    {
+      "name": "Expanded tanh GELU expression",
+      "included_in_production": false,
+      "reason": "No consistent end-to-end gain; original Candle gelu() restored"
+    },
+    {
+      "name": "Float64 attention substitution",
+      "included_in_production": false,
+      "reason": "Did not reproduce the float32 oracle; no global precision promotion used"
+    }
+  ],
+  "remaining_gap": {
+    "strict_whole_flow_pass": false,
+    "failed_cases": [
+      "8+8",
+      "4+4",
+      "5+11"
+    ],
+    "facts": [
+      "Pinned PyTorch contiguous Linear flattens to addmm and initializes bias before MKL SGEMM; Candle uses a different GEMM reduction and adds bias afterward",
+      "Frozen block 2 projected logits span approximately -95578 to 4859, amplifying low-order projection differences; changing only Q/K/V in official attention reproduces the observed attention error",
+      "Correcting local numerical defects does not yield monotonically smaller full-Flow error: the 5+11 strict failure count increases from 37 to 56",
+      "This evidence does not establish a missing model operator, and does not justify a threshold relaxation, hardware-specific SGEMM emulation, or release parity claim"
+    ]
+  },
+  "reproduction": {
+    "prepare": "Use the source/model/runtime pins in scripts/reference/pins.json and prepare dependencies before offline_exec.py",
+    "features": "Import scripts/reference/cosyvoice_pretrained.py and call analytic_features(OUTPUT/analytic-features.json)",
+    "export": "python scripts/reference/offline_exec.py -- PYTHON scripts/reference/export_cosyvoice_flow.py --source OFFICIAL_SOURCE --weights MODEL/flow.pt --prompt-features OUTPUT/analytic-features.json --prompt-tokens PROMPT --tokens TARGET --output OUTPUT/CASE",
+    "build": "RUSTFLAGS=\"-D warnings\" CARGO_BUILD_JOBS=1 cargo build --release --locked -p tts-cosyvoice --example flow_oracle --example flow_block_oracle",
+    "candidate": "python scripts/reference/offline_exec.py -- target/release/examples/flow_oracle CONVERTED_MODEL OUTPUT/CASE/input.json OUTPUT/CASE/flow-noise.safetensors OUTPUT/CASE/candidate.json",
+    "compare": "python scripts/reference/compare_tensors.py OUTPUT/CASE/reference.json OUTPUT/CASE/candidate.json --atol 1e-5 --rtol 1e-4 --output OUTPUT/CASE/parity.json",
+    "isolated_block": "Export with --block-trace 2; run flow_block_oracle CONVERTED_MODEL OUTPUT/CASE/block-input.json 2 OUTPUT/CASE/block-candidate.json inside offline_exec.py; compare to block-reference.json"
+  }
+}

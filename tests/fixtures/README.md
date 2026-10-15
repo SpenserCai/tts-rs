@@ -20,3 +20,19 @@ a cross-framework equivalence guarantee.
 results, their exact scope and source/weight provenance. It contains scalar
 metrics only, not audio, model weights or speaker vectors. It is historical
 evidence; rerun the evaluation scripts to validate a changed implementation.
+
+[`cosyvoice-frontend-validation.json`](cosyvoice-frontend-validation.json)
+records the public analytic frontend comparison and isolated ONNX pooling
+regression. The small reproducible feature tensors and authored operator graph
+live in `crates/tts-cosyvoice/tests/fixtures/`, beside their regeneration guide.
+
+[`cosyvoice-flow-revalidation.json`](cosyvoice-flow-revalidation.json) retains
+strict before/after failures on four identically replayed analytic inputs,
+operator diagnostics, implementation hashes and reproduction commands. It is
+not a passing full-Flow certification.
+
+[`cosyvoice-coupled-waveform-validation.json`](cosyvoice-coupled-waveform-validation.json)
+records the current Flow-to-HiFT failures and passing same-mel HiFT controls.
+[`cosyvoice-attention-backend-control.json`](cosyvoice-attention-backend-control.json)
+changes only the official attention backend on those same inputs. Neither report
+reclassifies a failed strict comparison using SNR or a listening-quality claim.

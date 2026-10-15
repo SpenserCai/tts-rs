@@ -49,6 +49,39 @@ fn generate_fixed_noise(
     Tensor::from_vec(values, (batch, channels, length), device)?.to_dtype(dtype)
 }
 
+/// Construct the sampling grid before applying the scheduler.
+///
+/// Float32 follows the pinned PyTorch CPU linspace contract: a float32 step,
+/// symmetric endpoint evaluation and one rounding for each multiply-add.
+/// See PyTorch's `aten/src/ATen/native/cpu/RangeFactoriesKernel.cpp` and
+/// `LICENSE-PYTORCH`. Other dtypes retain the existing float32-staged grid;
+/// this function does not assert PyTorch parity for those precision modes.
+fn uniform_time_grid(n_steps: usize, device: &Device, dtype: DType) -> Result<Tensor> {
+    if n_steps == 0 {
+        candle::bail!("flow matching requires at least one Euler step");
+    }
+    let points = n_steps
+        .checked_add(1)
+        .ok_or_else(|| candle::Error::Msg("flow time grid length overflows usize".into()))?;
+    let values: Vec<f32> = if dtype == DType::F32 {
+        let step = 1.0f32 / n_steps as f32;
+        let halfway = points / 2;
+        (0..points)
+            .map(|i| {
+                if i < halfway {
+                    step.mul_add(i as f32, 0.0)
+                } else {
+                    (-step).mul_add((n_steps - i) as f32, 1.0)
+                }
+            })
+            .collect()
+    } else {
+        let step = 1.0 / n_steps as f64;
+        (0..points).map(|i| (i as f64 * step) as f32).collect()
+    };
+    Tensor::from_vec(values, points, device)?.to_dtype(dtype)
+}
+
 /// Causal Conditional Flow Matching
 ///
 /// Uses DiT as the estimator and Euler ODE solver for sampling.
@@ -212,10 +245,7 @@ impl CausalConditionalCFM {
 
     /// Get time span with optional cosine schedule
     fn get_t_span(&self, n_steps: usize, device: &Device, dtype: DType) -> Result<Tensor> {
-        // Uniformly distributed time points [0, 1]
-        let step = 1.0 / n_steps as f64;
-        let t_values: Vec<f32> = (0..=n_steps).map(|i| (i as f64 * step) as f32).collect();
-        let t = Tensor::from_vec(t_values, n_steps + 1, device)?.to_dtype(dtype)?;
+        let t = uniform_time_grid(n_steps, device, dtype)?;
 
         if self.t_scheduler == "cosine" {
             // t = 1 - cos(t * π/2)
@@ -417,32 +447,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_time_span_linear() -> Result<()> {
-        let device = Device::Cpu;
-        let _dtype = DType::F32;
+    fn time_grid_matches_pinned_float32_linspace() -> Result<()> {
+        // Independent torch 2.3.1+cpu oracle, commit d44533f9d073df13895333e70b66f81c513c1889:
+        // torch.linspace(0, 1, n + 1, dtype=torch.float32).view(torch.int32)
+        // Three/seven steps catch one-sided F64 generation; fifty also catches
+        // separate multiply/subtract rounding. Ten preserves the default grid.
+        let cases: &[(usize, &[u32])] = &[
+            (1, &[0, 0x3f800000]),
+            (3, &[0, 0x3eaaaaab, 0x3f2aaaaa, 0x3f800000]),
+            (
+                7,
+                &[
+                    0, 0x3e124925, 0x3e924925, 0x3edb6db8, 0x3f124924, 0x3f36db6e, 0x3f5b6db7,
+                    0x3f800000,
+                ],
+            ),
+            (
+                10,
+                &[
+                    0, 0x3dcccccd, 0x3e4ccccd, 0x3e99999a, 0x3ecccccd, 0x3f000000, 0x3f19999a,
+                    0x3f333333, 0x3f4ccccd, 0x3f666666, 0x3f800000,
+                ],
+            ),
+            (
+                50,
+                &[
+                    0, 0x3ca3d70a, 0x3d23d70a, 0x3d75c28f, 0x3da3d70a, 0x3dcccccc, 0x3df5c28f,
+                    0x3e0f5c29, 0x3e23d70a, 0x3e3851eb, 0x3e4ccccc, 0x3e6147ae, 0x3e75c28f,
+                    0x3e851eb8, 0x3e8f5c29, 0x3e999999, 0x3ea3d70a, 0x3eae147b, 0x3eb851eb,
+                    0x3ec28f5c, 0x3ecccccc, 0x3ed70a3d, 0x3ee147ae, 0x3eeb851e, 0x3ef5c28f,
+                    0x3f000000, 0x3f051eb8, 0x3f0a3d71, 0x3f0f5c29, 0x3f147ae1, 0x3f19999a,
+                    0x3f1eb852, 0x3f23d70a, 0x3f28f5c3, 0x3f2e147b, 0x3f333333, 0x3f3851ec,
+                    0x3f3d70a4, 0x3f428f5c, 0x3f47ae15, 0x3f4ccccd, 0x3f51eb85, 0x3f570a3e,
+                    0x3f5c28f6, 0x3f6147ae, 0x3f666666, 0x3f6b851f, 0x3f70a3d7, 0x3f75c28f,
+                    0x3f7ae148, 0x3f800000,
+                ],
+            ),
+        ];
+        for &(steps, expected) in cases {
+            let grid = uniform_time_grid(steps, &Device::Cpu, DType::F32)?.to_vec1::<f32>()?;
+            assert_eq!(
+                grid.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(grid[0], 0.0);
+            assert_eq!(grid[steps], 1.0);
+            assert!(grid.windows(2).all(|pair| pair[0] < pair[1]));
+        }
+        Ok(())
+    }
 
-        // Create a simple config
-        let _config = CFMConfig {
-            sigma_min: 1e-6,
-            t_scheduler: "linear".to_string(),
-            inference_cfg_rate: 0.7,
-            n_timesteps: 10,
-        };
+    #[test]
+    fn time_grid_rejects_zero_steps_and_length_overflow() {
+        for steps in [0, usize::MAX] {
+            assert!(uniform_time_grid(steps, &Device::Cpu, DType::F32).is_err());
+        }
+    }
 
-        // Cannot create CausalConditionalCFM directly as it requires DiT
-        // Only test time span calculation logic
-
-        let n_steps = 10;
-        let step = 1.0 / n_steps as f64;
-        let t_values: Vec<f32> = (0..=n_steps).map(|i| (i as f64 * step) as f32).collect();
-        let t = Tensor::from_vec(t_values, n_steps + 1, &device)?;
-
-        assert_eq!(t.dim(0)?, 11);
-
-        let t_vec: Vec<f32> = t.to_vec1()?;
-        assert!((t_vec[0] - 0.0).abs() < 1e-5);
-        assert!((t_vec[10] - 1.0).abs() < 1e-5);
-
+    #[test]
+    fn time_grid_preserves_existing_low_precision_staging() -> Result<()> {
+        // These frozen values preserve the previous grid construction and cast.
+        // They are regression fixtures, not half-precision upstream parity claims.
+        let cases = [
+            (
+                DType::F16,
+                [
+                    0.0, 0.14282227, 0.28564453, 0.4284668, 0.57128906, 0.71435547, 0.8569336, 1.0,
+                ],
+            ),
+            (
+                DType::BF16,
+                [
+                    0.0, 0.14257813, 0.28515625, 0.42773438, 0.5703125, 0.71484375, 0.85546875, 1.0,
+                ],
+            ),
+        ];
+        for (dtype, expected) in cases {
+            let grid = uniform_time_grid(7, &Device::Cpu, dtype)?;
+            assert_eq!(grid.dtype(), dtype);
+            assert_eq!(grid.to_dtype(DType::F32)?.to_vec1::<f32>()?, expected);
+        }
         Ok(())
     }
 }
