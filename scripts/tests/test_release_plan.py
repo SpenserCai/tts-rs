@@ -162,6 +162,7 @@ class GitHubPublicationTests(unittest.TestCase):
         self.enterContext(patch.object(release, "capture", return_value=COMMIT))
         self.enterContext(patch.object(plan, "remote_tag", return_value=(COMMIT, plan.run_marker(COMMIT))))
         self.run = self.enterContext(patch.object(release, "run"))
+        self.sleep = self.enterContext(patch.object(release.time, "sleep"))
         self.document = {"draft": True, "body": plan.completion_marker(COMMIT) + "\n" + plan.run_marker(COMMIT), "assets": []}
 
     def test_publish_only_after_draft_assets_match_verified_digest(self) -> None:
@@ -171,6 +172,69 @@ class GitHubPublicationTests(unittest.TestCase):
         self.assertEqual(self.run.call_args_list[1], call("gh", "release", "upload", "v0.1.0", str(self.file)))
         self.assertEqual(Path(self.run.call_args_list[2].args[-1]).name, "SHA256SUMS")
         self.assertEqual(self.run.call_args_list[3], call("gh", "release", "edit", "v0.1.0", "--draft=false"))
+
+    def test_new_draft_read_retries_absence_then_publishes(self) -> None:
+        visible = {**self.document, "assets": self.assets}
+        with patch.object(plan, "release_document", side_effect=[None, None, None, self.document, visible]) as read:
+            release.github_release("v0.1.0", self.root, False)
+        self.assertEqual(read.call_count, 5)
+        self.assertEqual(self.sleep.call_args_list, [call(2), call(2)])
+        self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["create", "upload", "upload", "edit"])
+
+    def test_new_draft_read_timeout_never_recreates_or_uploads(self) -> None:
+        with patch.object(plan, "release_document", return_value=None) as read:
+            with self.assertRaisesRegex(SystemExit, "not visible; re-run failed jobs"):
+                release.github_release("v0.1.0", self.root, False)
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(self.sleep.call_args_list, [call(2), call(2)])
+        self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["create"])
+
+    def test_new_draft_read_rejects_conflicting_owner_without_further_retry(self) -> None:
+        conflict = {**self.document, "body": "another workflow run"}
+        with patch.object(plan, "release_document", side_effect=[None, None, conflict, self.document]) as read:
+            with self.assertRaisesRegex(SystemExit, "different sources or workflow run"):
+                release.github_release("v0.1.0", self.root, False)
+        self.assertEqual(read.call_count, 3)
+        self.sleep.assert_called_once_with(2)
+        self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["create"])
+
+    def test_uploaded_assets_retry_only_reads_without_reupload(self) -> None:
+        partial = {**self.document, "assets": [self.asset]}
+        complete = {**self.document, "assets": self.assets}
+        with patch.object(plan, "release_document", side_effect=[partial, partial, partial, complete]) as read:
+            release.github_release("v0.1.0", self.root, False)
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(self.sleep.call_args_list, [call(2), call(2)])
+        self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["upload", "edit"])
+        self.assertEqual(Path(self.run.call_args_list[0].args[-1]).name, "SHA256SUMS")
+
+    def test_uploaded_assets_read_timeout_never_publishes(self) -> None:
+        with patch.object(plan, "release_document", return_value=self.document) as read:
+            with self.assertRaisesRegex(SystemExit, "not fully visible; re-run failed jobs"):
+                release.github_release("v0.1.0", self.root, False)
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(self.sleep.call_args_list, [call(2), call(2)])
+        self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["upload", "upload"])
+
+    def test_uploaded_assets_reject_conflicts_without_retry(self) -> None:
+        complete = {**self.document, "assets": self.assets}
+        conflicts = [
+            {**complete, "body": "another workflow run"},
+            {**complete, "assets": [*self.assets, {**self.asset, "name": "extra.whl"}]},
+            {**self.document, "assets": [{**self.asset, "digest": "different"}]},
+            {**self.document, "assets": [self.asset, self.asset]},
+            {**self.document, "draft": False},
+            None,
+        ]
+        for conflict in conflicts:
+            with self.subTest(document=conflict), \
+                 patch.object(plan, "release_document", side_effect=[self.document, conflict, complete]) as read:
+                with self.assertRaises(SystemExit):
+                    release.github_release("v0.1.0", self.root, False)
+                self.assertEqual(read.call_count, 2)
+            self.sleep.assert_not_called()
+            self.assertEqual([entry.args[2] for entry in self.run.call_args_list], ["upload", "upload"])
+            self.run.reset_mock()
 
     def test_retry_skips_identical_assets_and_already_published_release(self) -> None:
         document = {**self.document, "draft": False, "assets": self.assets}
@@ -185,6 +249,7 @@ class GitHubPublicationTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     release.github_release("v0.1.0", self.root, False)
             self.run.assert_not_called()
+            self.sleep.assert_not_called()
 
     def test_flat_checksums_verify_downloads_and_remain_stable_on_retry(self) -> None:
         (self.root / "wheels").mkdir()
