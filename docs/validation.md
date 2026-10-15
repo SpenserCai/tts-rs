@@ -133,6 +133,13 @@ Mish's negative tail. They do not guarantee smaller complete-model error; the
 asymmetric case above worsens. Both extensions stay in the model crate without
 a Candle fork, whole-model float64 promotion or accelerator-to-CPU fallback.
 
+The float32 Euler time grid also follows the pinned CPU `torch.linspace`
+rounding contract. Independent bit-pattern fixtures cover 1, 3, 7, 10 and 50
+steps; the previous one-sided float64 construction differed at non-default
+counts. The ten-step default is bit-for-bit unchanged, so this grid correction
+does not change the full-Flow results above. Low-precision grid behavior is
+preserved without claiming new half-precision parity.
+
 Frozen block diagnostics show that Q/K/V and adaptive projections individually
 pass the strict threshold, while their small differences amplify through the
 checkpoint's large attention logits. The complete block still fails. This

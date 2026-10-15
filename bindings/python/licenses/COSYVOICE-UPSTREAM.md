@@ -73,6 +73,15 @@ their device and use a stable softplus identity with a bounded negative-tail
 series. This is a numerical formulation of Mish, not a change to model weights
 or a claim of accelerator parity.
 
+The float32 Euler grid follows the same pinned PyTorch CPU source's
+`aten/src/ATen/native/cpu/RangeFactoriesKernel.cpp` linspace operation: a
+float32 step, symmetric evaluation from both endpoints, and fused multiply-add
+rounding. Independent `torch.linspace` bit-pattern fixtures cover non-default
+step counts as well as the unchanged ten-step default. Other precision modes
+retain their existing float32-staged grid; these fixtures do not claim
+half-precision or accelerator parity. The PyTorch attribution and license above
+also apply to this local grid construction.
+
 ## Validation boundary
 
 Component tests and compilation do not establish pretrained synthesis parity.
