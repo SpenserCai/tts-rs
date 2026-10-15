@@ -189,11 +189,11 @@ pub const SAMPLES_PER_FRAME: usize = 1920;
 pub fn auto_device() -> Result<Device> {
     #[cfg(feature = "cuda")]
     {
-        if let Ok(device) = Device::cuda_if_available(0) {
-            if device.is_cuda() {
-                tracing::info!("Using CUDA device");
-                return Ok(device);
-            }
+        if let Ok(device) = Device::cuda_if_available(0)
+            && device.is_cuda()
+        {
+            tracing::info!("Using CUDA device");
+            return Ok(device);
         }
     }
 
