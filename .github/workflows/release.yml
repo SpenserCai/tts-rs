@@ -222,8 +222,91 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  accelerators:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cu118-linux-x64
+            os: ubuntu-22.04
+            cuda: '11.8.0'
+            gcc: '11'
+          - variant: cu124-linux-x64
+            os: ubuntu-22.04
+            cuda: '12.4.0'
+            gcc: '12'
+          - variant: cu128-linux-x64
+            os: ubuntu-22.04
+            cuda: '12.8.0'
+            gcc: '12'
+          - variant: cu124-win32-x64
+            os: windows-2022
+            cuda: '12.4.0'
+          - variant: metal-darwin-arm64
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      CUDA_COMPUTE_CAP: '80'
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: bindings/node/package-lock.json
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: accelerator-${{ matrix.variant }}
+          cache-all-crates: true
+      - name: Install the reviewed CUDA host compiler
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
+          echo "NVCC_CCBIN=/usr/bin/g++-${{ matrix.gcc }}" >> "$GITHUB_ENV"
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        if: runner.os == 'Windows'
+        with:
+          toolset: '14.3'
+      - uses: Jimver/cuda-toolkit@b6fc3a9f3f15256d9d94ffe1254f9c5a2565cde6 # v0.2.30
+        if: runner.os == 'Linux'
+        id: cuda-linux
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+          sub-packages: '["nvcc", "cudart-dev", "nvrtc", "nvrtc-dev"]'
+          non-cuda-sub-packages: '["libcublas", "libcublas-dev", "libcurand", "libcurand-dev"]'
+      - uses: Jimver/cuda-toolkit@b6fc3a9f3f15256d9d94ffe1254f9c5a2565cde6 # v0.2.30
+        if: runner.os == 'Windows'
+        id: cuda-windows
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas_dev", "curand_dev", "nvrtc_dev"]'
+      - run: python -m pip install maturin==1.14.0
+      - name: Build isolated accelerator previews (no GPU execution claim)
+        env:
+          CUDA_PATH: ${{ steps.cuda-linux.outputs.CUDA_PATH || steps.cuda-windows.outputs.CUDA_PATH }}
+        run: python scripts/accelerators.py ${{ matrix.variant }} --output dist/accelerators
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-accelerator-${{ matrix.variant }}
+          path: dist/accelerators/*
+          if-no-files-found: error
+          retention-days: 14
+
   assemble:
-    needs: [native, wasm, wasm64]
+    needs: [native, wasm, wasm64, accelerators]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -265,6 +348,11 @@ jobs:
           name: release-wasm64
           path: release-assets/npm
       - run: python scripts/release.py runtime-manifest --output release-assets/runtime-requirements.json
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: release-accelerator-*
+          path: release-assets/accelerators
+          merge-multiple: true
       - run: python scripts/release.py checksums release-assets
       - run: python scripts/release.py verify-distributions release-assets
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -299,7 +387,7 @@ jobs:
           path: release-assets
       - run: python scripts/release.py verify-distributions release-assets
       - name: Install the packed Node facade and matching platform package
-        run: python scripts/release.py test-node release-assets/npm
+        run: python scripts/release.py test-node release-assets/npm --accelerators release-assets/accelerators
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.10'
@@ -316,6 +404,14 @@ jobs:
           if len(wheels) != 1:
               raise SystemExit("Expected exactly one wheel for this platform")
           subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", str(wheels[0])], check=True)
+          # Install every matching preview without importing it: a driverless host
+          # must retain the default CPU package even with accelerator packages present.
+          gpu_marker = {"Linux": "linux_x86_64", "Darwin": "macosx", "Windows": "win_amd64"}[platform.system()]
+          previews = [p for p in Path("release-assets/accelerators").glob("*.whl") if gpu_marker in p.name]
+          expected = 3 if platform.system() == "Linux" else 1
+          if len(previews) != expected:
+              raise SystemExit("Incomplete accelerator co-installation matrix")
+          subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", *map(str, previews)], check=True)
           subprocess.run([sys.executable, "bindings/python/tests/smoke.py"], check=True)
           PY
 

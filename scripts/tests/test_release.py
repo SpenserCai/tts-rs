@@ -65,9 +65,14 @@ class VersionTests(unittest.TestCase):
             version.check(self.root)
 
     def test_rejects_nonportable_version_before_writing(self) -> None:
-        with self.assertRaisesRegex(ValueError, "stable"):
-            version.set_version("0.1.0-rc.1", self.root)
+        with self.assertRaisesRegex(ValueError, "MAJOR"):
+            version.set_version("0.1.0+cuda", self.root)
         self.assertEqual(version.check(self.root), "0.1.0")
+
+    def test_release_candidate_has_one_version_and_normalized_python_spelling(self) -> None:
+        version.set_version("0.1.1-rc.1", self.root)
+        self.assertEqual(version.check(self.root), "0.1.1-rc.1")
+        self.assertEqual(version.python_version(version.check(self.root)), "0.1.1rc1")
 
 
 class PublicationTests(unittest.TestCase):

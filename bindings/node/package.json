@@ -1,6 +1,6 @@
 {
   "name": "@spensercai/tts-rs",
-  "version": "0.1.1",
+  "version": "0.1.2-rc.1",
   "description": "Modular native speech synthesis and voice conditioning with Rust and Candle",
   "license": "MIT",
   "main": "index.js",

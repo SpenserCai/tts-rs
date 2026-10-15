@@ -73,6 +73,18 @@ entries are synchronized copies. Both Wasm targets and native platform npm
 packages inherit that same version at packaging time. Publish one stable
 `MAJOR.MINOR.PATCH` version across crates.io, PyPI, npm and the GitHub `vVERSION`
 tag; never independently bump a binding or silently reuse a published version.
+Release candidates may use `MAJOR.MINOR.PATCH-rc.N` (positive N). Maturin's PEP 440
+spelling is `MAJOR.MINOR.PATCHrcN`; this is a mechanical representation of the same
+workspace version. Publish npm candidates to `next`, never `latest`, and mark the
+GitHub release as a prerelease. Stable versions retain the normal channels.
+
+Accelerator previews are isolated wheel/tarball GitHub assets, not default registry
+packages. Preserve the CPU import namespace and use separate backend namespaces;
+never replace CPU binaries with CUDA-linked ones. Do not publish GPU previews to
+PyPI/npm before hardware validation. Build reports must distinguish compilation,
+portable import tests and actual GPU execution. Co-installation tests must verify
+that installing previews does not break the ordinary CPU package. Do not bundle
+driver stubs or manufacture device-test success on a driverless runner.
 
 Use `python scripts/version.py set X.Y.Z` for a release update and commit its
 manifest and lockfile changes together. Run `python scripts/version.py check`
