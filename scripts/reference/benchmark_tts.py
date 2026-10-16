@@ -49,14 +49,14 @@ def main() -> int:
         reference = output / "conditioning-tone.wav"
         write_conditioning_tone(reference)
         lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
-        diff = subprocess.check_output(["git", "diff", "HEAD", "--", "crates/tts-qwen", "crates/tts-core"], cwd=ROOT)
+        diff = subprocess.check_output(["git", "diff", "HEAD", "--", "crates/speechfoundry-qwen", "crates/speechfoundry-core"], cwd=ROOT)
         report.update(source_revision=revision(ROOT), source_diff_sha256=hashlib.sha256(diff).hexdigest(),
                       source_dirty=bool(diff), cargo_lock_sha256=sha256(ROOT / "Cargo.lock"),
                       rustc=version(["rustc", "--version", "--verbose"]), cargo=version(["cargo", "--version"]),
                       dependencies={package["name"]: package["version"] for package in lock["package"]
                                     if package["name"] in {"candle-core", "candle-nn", "candle-transformers", "rayon"}},
                       reference_implementation_pin=PINS["qwen"], requested_threads=args.threads)
-        source_files = sorted(path for crate in ("tts-qwen", "tts-core")
+        source_files = sorted(path for crate in ("speechfoundry-qwen", "speechfoundry-core")
                               for path in (ROOT / "crates" / crate).rglob("*")
                               if path.suffix == ".rs" or path.name == "Cargo.toml")
         report["source_files_sha256"] = {str(path.relative_to(ROOT)): sha256(path) for path in source_files}
@@ -67,7 +67,7 @@ def main() -> int:
         metadata = model / ".cache/huggingface/download/model.safetensors.metadata"
         report["download_metadata_revision"] = metadata.read_text().splitlines()[0] if metadata.exists() else None
         with (output / "build.log").open("w") as stream:
-            subprocess.run(["cargo", "build", "--locked", "--release", "-p", "tts-qwen", "--example", "tts_benchmark"],
+            subprocess.run(["cargo", "build", "--locked", "--release", "-p", "speechfoundry-qwen", "--example", "tts_benchmark"],
                            cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT, check=True)
         target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
         if not target.is_absolute():

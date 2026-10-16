@@ -6,7 +6,7 @@ const {
   validateVoicePrompt,
   validateSynthesisOptions,
   QwenSpeakerEncoder,
-} = require('../pkg/tts_wasm.js')
+} = require('../pkg/speechfoundry_wasm.js')
 
 test('Wasm audio preserves PCM and metadata', () => {
   const pcm = new Float32Array([0, 0.25, -0.25, 0])

@@ -17,9 +17,9 @@ def sources(kind: str) -> dict[str, Path]:
     models = ("qwen",) if kind == "wasm" else ("qwen", "cosyvoice")
     for model in models:
         for filename in ("LICENSE-MIT", "UPSTREAM.md"):
-            files[f"{model.upper()}-{filename}"] = ROOT / "crates" / f"tts-{model}" / filename
+            files[f"{model.upper()}-{filename}"] = ROOT / "crates" / f"speechfoundry-{model}" / filename
     if "cosyvoice" in models:
-        files["COSYVOICE-LICENSE-PYTORCH"] = ROOT / "crates/tts-cosyvoice/LICENSE-PYTORCH"
+        files["COSYVOICE-LICENSE-PYTORCH"] = ROOT / "crates/speechfoundry-cosyvoice/LICENSE-PYTORCH"
     return files
 
 

@@ -46,7 +46,7 @@ def run(output: Path, source: Path, model: Path | None, converted: Path | None,
         existing = json.loads(conversion.read_text())["files"] if conversion.exists() else {}
         missing = [stage for stage in components if stage + ".safetensors" not in existing]
         if missing:
-            command = [sys.executable, str(ROOT / "crates/tts-cosyvoice/scripts/convert.py"),
+            command = [sys.executable, str(ROOT / "crates/speechfoundry-cosyvoice/scripts/convert.py"),
                             "--source", str(source), "--input", str(model), "--output", str(converted),
                             "--stages", *missing]
             subprocess.run(model_command(command, offline), check=True)
@@ -81,7 +81,7 @@ def run(output: Path, source: Path, model: Path | None, converted: Path | None,
         with (directory / "reference.log").open("w") as log:
             subprocess.run(model_command(command, offline), stdout=log, stderr=subprocess.STDOUT, check=True)
         example = stage + "_oracle"
-        subprocess.run(["cargo", "build", "--release", "--locked", "-p", "tts-cosyvoice", "--example", example],
+        subprocess.run(["cargo", "build", "--release", "--locked", "-p", "speechfoundry-cosyvoice", "--example", example],
                        cwd=ROOT, check=True)
         binary = target / "release/examples" / (example + (".exe" if os.name == "nt" else ""))
         command = [str(binary), str(converted), str(directory / "input.json")]

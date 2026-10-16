@@ -4,10 +4,34 @@ use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use tts_rs::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions, VoicePrompt};
+use speechfoundry::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions, VoicePrompt};
 
 const MAX_PROMPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OPTIONS_BYTES: usize = 64 * 1024;
+
+/// Compiled native binding identity, independent of npm manifest metadata.
+#[napi(object)]
+pub struct BackendInfo {
+    /// Unified workspace version.
+    pub version: String,
+    /// Language-wrapper protocol version.
+    pub api: u32,
+    /// Whether this binary includes CUDA support.
+    pub cuda: bool,
+    /// Whether this binary includes Metal support.
+    pub metal: bool,
+}
+
+/// Describe this binary without initializing a device or loading a checkpoint.
+#[napi]
+pub fn backend_info() -> BackendInfo {
+    BackendInfo {
+        version: env!("CARGO_PKG_VERSION").into(),
+        api: 1,
+        cuda: cfg!(feature = "cuda"),
+        metal: cfg!(feature = "metal"),
+    }
+}
 
 fn check_json_size(value: &str, maximum: usize) -> Result<()> {
     if value.len() > maximum {

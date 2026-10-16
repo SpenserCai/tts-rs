@@ -1,20 +1,24 @@
 # Architecture
 
-The public boundary is a local model session: load a checkpoint, extract or import
+SpeechFoundry is a local speech inference library with independent model and
+task boundaries. Synthesis is implemented; ASR/STT is a future extension, not a
+capability advertised by this release.
+
+The synthesis boundary is a local model session: load a checkpoint, extract or import
 a compatible voice prompt, synthesize PCM, and release the session. Model math
 stays outside language bindings. Model downloads are explicit tooling operations.
 
 ```mermaid
 flowchart TD
-    R["Rust application"] --> E["candle-tts Engine"]
+    R["Rust application"] --> E["speechfoundry Engine"]
     P["Python / PyO3"] --> E
     N["Node / napi-rs workers"] --> E
-    E --> Q["tts-qwen"]
-    E --> C["tts-cosyvoice"]
+    E --> Q["speechfoundry-qwen"]
+    E --> C["speechfoundry-cosyvoice"]
     Q --> T["Candle tensors"]
     C --> T
     C --> O["ONNX Runtime: reference frontend"]
-    E --> A["tts-core: audio and contracts"]
+    E --> A["speechfoundry-core: audio and contracts"]
     W["wasm32 / Worker"] --> A
     W --> QS["Optional Qwen speaker encoder"]
     QS --> T
@@ -68,6 +72,36 @@ decoder. CosyVoice's sequence is speech-token LM → conditional flow → HiFT. 
 common use of transformers does not make their caches or conditioning equivalent.
 
 ## Ownership and execution
+
+Python and Node expose stable facade imports. The default native binary provides
+CPU execution and portable utilities; accelerator previews register separate
+private binaries. Python discovers the `speechfoundry.backends` distribution entry
+points; Node resolves backend package manifests for the host platform. Neither
+discovery path imports a GPU binary or probes hardware. Distribution versions,
+compiled workspace versions and binding protocol 1 must agree before model loading.
+
+```mermaid
+flowchart TD
+    A["Public Python / Node API"] --> S["Explicit device and build selection"]
+    S --> C["Bundled CPU binary"]
+    S --> M["Installed backend metadata"]
+    M --> V["Version and protocol validation"]
+    V --> G["One selected CUDA / Metal binary"]
+    C --> E["Same Rust engine and model code"]
+    G --> E
+```
+
+One matching installed backend is selected automatically; multiple CUDA builds
+require an explicit build identifier. A process reserves its first CUDA build
+even after a failed import, because native libraries can load partially; another
+CUDA build requires a fresh process. CPU remains independently usable. Source
+builds can use accelerators compiled into their main binary without an extra
+preview package. These choices do not establish hardware execution or model parity.
+
+The Python facade owns the native engine and normalizes returned PCM into its
+public `Audio` type; it never casts objects between extension modules. Node owns
+the native engine behind a single public wrapper and returns owned typed arrays.
+No model math is implemented in either loader or wrapper.
 
 `Engine` owns a model and its device. Mutable synthesis access prevents concurrent
 cache mutation. Python releases its GIL around model work; Node uses worker tasks

@@ -1,11 +1,11 @@
 [package]
-name = "tts-node"
+name = "speechfoundry-node"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Node-API bindings for the tts-rs speech synthesis library"
+description = "Node-API bindings for the speechfoundry speech synthesis library"
 publish = false
 
 [lib]
@@ -15,14 +15,14 @@ doctest = false
 
 [features]
 default = []
-cuda = ["tts-rs/cuda"]
-metal = ["tts-rs/metal"]
+cuda = ["speechfoundry/cuda"]
+metal = ["speechfoundry/metal"]
 
 [dependencies]
 napi = { version = "3", default-features = false, features = ["napi8"] }
 napi-derive = "3"
 serde_json.workspace = true
-tts-rs = { package = "candle-tts", path = "../../crates/tts" }
+speechfoundry = { path = "../../crates/speechfoundry" }
 
 [build-dependencies]
 napi-build = "2"

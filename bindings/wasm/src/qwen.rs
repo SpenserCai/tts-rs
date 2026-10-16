@@ -2,8 +2,10 @@
 
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
-use tts_core::Audio;
-use tts_qwen::{audio::AudioBuffer, models::SpeakerEncoderConfig, models::speaker::SpeakerEncoder};
+use speechfoundry_core::Audio;
+use speechfoundry_qwen::{
+    audio::AudioBuffer, models::SpeakerEncoderConfig, models::speaker::SpeakerEncoder,
+};
 use wasm_bindgen::prelude::*;
 
 use super::{MAX_OPTIONS_BYTES, check_json_size, js_error};

@@ -1,4 +1,4 @@
 /npm/
-/index.js
-/index.d.ts
+/_native.js
+/_native.d.ts
 /.napi-*

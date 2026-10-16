@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use tts_rs::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions, VoicePrompt};
+use speechfoundry::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions, VoicePrompt};
 
 const MAX_PROMPT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_OPTIONS_BYTES: usize = 64 * 1024;
@@ -27,7 +27,7 @@ fn runtime_error(error: impl std::fmt::Display) -> PyErr {
 }
 
 /// Validated mono PCM audio with its explicit sample rate.
-#[pyclass(name = "Audio", module = "candle_tts", frozen)]
+#[pyclass(name = "Audio", module = "speechfoundry", frozen)]
 pub struct PyAudio {
     inner: Audio,
 }
@@ -71,7 +71,7 @@ impl PyAudio {
 }
 
 /// A loaded native model. Operations on one instance are serialized.
-#[pyclass(name = "Engine", module = "candle_tts", frozen)]
+#[pyclass(name = "Engine", module = "speechfoundry", frozen)]
 pub struct PyEngine {
     inner: Mutex<Engine>,
 }
@@ -159,5 +159,14 @@ fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyEngine>()?;
     module.add_function(wrap_pyfunction!(validate_voice_prompt, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    module.add("_backend_api", 1_u32)?;
+    let mut backends = vec!["cpu"];
+    if cfg!(feature = "cuda") {
+        backends.push("cuda");
+    }
+    if cfg!(feature = "metal") {
+        backends.push("metal");
+    }
+    module.add("_backends", backends)?;
     Ok(())
 }

@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use candle_core::{DType, Device, Tensor};
-use tts_qwen::{ParsedModelConfig, Qwen3TTS, tokenizer::TextTokenizer};
-use tts_rs::{CheckpointHasher, Engine, ModelKind};
+use speechfoundry::{CheckpointHasher, Engine, ModelKind};
+use speechfoundry_qwen::{ParsedModelConfig, Qwen3TTS, tokenizer::TextTokenizer};
 use wasm_bindgen::prelude::*;
 
 use super::{MAX_OPTIONS_BYTES, MAX_PROMPT_BYTES, WasmAudio, check_json_size, js_error};

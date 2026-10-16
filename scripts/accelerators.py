@@ -36,7 +36,7 @@ MATRIX = {
 
 def names(variant: str) -> tuple[str, str, str]:
     backend = MATRIX[variant][0]
-    return f"candle-tts-{backend}", f"candle_tts_{backend}", f"@spensercai/tts-rs-{variant}"
+    return f"speechfoundry-{backend}", f"_speechfoundry_{backend}", f"@spensercai/speechfoundry-{variant}"
 
 
 def run(*args: str, cwd: Path, env: dict | None = None) -> None:
@@ -66,15 +66,22 @@ def stage_workspace(destination: Path, variant: str) -> None:
     python = destination / "bindings/python"
     project = python / "pyproject.toml"
     source = project.read_text(encoding="utf-8")
-    source = source.replace('name = "candle-tts"', f'name = "{distribution}"')
-    source = source.replace('module-name = "candle_tts._native"', f'module-name = "{namespace}._native"')
+    source = source.replace('name = "speechfoundry"', f'name = "{distribution}"')
+    source = source.replace('module-name = "speechfoundry._native"', f'module-name = "{namespace}._native"')
+    source += f'\n[project.entry-points."speechfoundry.backends"]\n{MATRIX[variant][0]} = "{namespace}._native"\n'
     project.write_text(source, encoding="utf-8")
-    (python / "python/candle_tts").rename(python / "python" / namespace)
+    (python / "python/speechfoundry").rename(python / "python" / namespace)
+    private = python / "python" / namespace
+    for helper in ("_backends.py", "_engine.py"):
+        (private / helper).unlink()
+    (private / "__init__.py").write_text(
+        '"""Private native backend; applications import speechfoundry."""\n'
+        'from ._native import Audio, Engine, __version__, validate_voice_prompt\n', encoding="utf-8")
     binding = python / "src/lib.rs"
     source = binding.read_text(encoding="utf-8")
-    if source.count('module = "candle_tts"') != 2:
+    if source.count('module = "speechfoundry"') != 2:
         raise SystemExit("Review Python class metadata before packaging accelerator namespaces")
-    binding.write_text(source.replace('module = "candle_tts"', f'module = "{namespace}"'), encoding="utf-8")
+    binding.write_text(source.replace('module = "speechfoundry"', f'module = "{namespace}"'), encoding="utf-8")
     node = destination / "bindings/node"
     for package in (python, node):
         shutil.copyfile(destination / "docs/accelerators.md", package / "README.md")
@@ -88,6 +95,10 @@ def stage_workspace(destination: Path, variant: str) -> None:
             value["os"] = [MATRIX[variant][3]]
             value["cpu"] = [MATRIX[variant][4]]
             value["private"] = True  # Downloadable preview; no accidental npm publish.
+            value["speechfoundryBackend"] = MATRIX[variant][0]
+            value["main"] = "_native.js"
+            value["types"] = "_native.d.ts"
+            value["files"] = [name for name in value["files"] if name not in ("index.js", "index.d.ts", "backends.cjs")]
         path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
@@ -104,11 +115,19 @@ def inspect_packages(directory: Path, variant: str, version: str) -> list[Path]:
         metadata = BytesParser().parsebytes(archive.read(metadata_files[0]))
         if metadata["Name"] != distribution or metadata["Version"] != python_version(version):
             raise SystemExit("Accelerator Python distribution identity mismatch")
-        if any(p.startswith("candle_tts/") for p in entries) or f"{namespace}/__init__.py" not in entries:
+        if any(p.startswith("speechfoundry/") for p in entries) or f"{namespace}/__init__.py" not in entries:
             raise SystemExit("Accelerator wheel must not overwrite the CPU namespace")
         extensions = [p for p in entries if p.startswith(namespace + "/_native") and p.endswith((".so", ".pyd"))]
         if len(extensions) != 1 or not any("LICENSE" in p for p in entries):
             raise SystemExit("Accelerator wheel is missing its extension or licenses")
+        from configparser import ConfigParser
+        registrations = [p for p in entries if p.endswith(".dist-info/entry_points.txt")]
+        if len(registrations) != 1:
+            raise SystemExit("Missing accelerator backend registration")
+        registration = ConfigParser()
+        registration.read_string(archive.read(registrations[0]).decode("utf-8"))
+        if dict(registration["speechfoundry.backends"]) != {MATRIX[variant][0]: f"{namespace}._native"}:
+            raise SystemExit("Invalid accelerator backend registration")
     with tarfile.open(tarballs[0]) as archive:
         stream = archive.extractfile("package/package.json")
         if stream is None:
@@ -120,8 +139,10 @@ def inspect_packages(directory: Path, variant: str, version: str) -> list[Path]:
             raise SystemExit("Accelerator npm platform mismatch")
         if metadata.get("optionalDependencies") or metadata.get("private") is not True:
             raise SystemExit("Preview packages must be explicit, non-publishing, self-contained tarballs")
+        if (metadata.get("speechfoundryBackend"), metadata.get("main"), metadata.get("types")) != (MATRIX[variant][0], "_native.js", "_native.d.ts"):
+            raise SystemExit("Invalid accelerator Node backend registration")
         entries = archive.getnames()
-        if len([p for p in entries if p.endswith(".node")]) != 1 or "package/index.d.ts" not in entries:
+        if len([p for p in entries if p.endswith(".node")]) != 1 or not {"package/_native.js", "package/_native.d.ts"}.issubset(entries):
             raise SystemExit("Missing accelerator Node binary or TypeScript declarations")
     return wheels + tarballs
 
@@ -146,10 +167,10 @@ def build(variant: str, output: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="tts-accelerator-") as temporary:
         staged = Path(temporary)
         stage_workspace(staged, variant)
-        run("cargo", "clippy", "-p", "candle-tts", "-p", "tts-python", "-p", "tts-node",
-            "--all-targets", "--features", f"candle-tts/{feature},tts-python/{feature},tts-node/{feature}",
+        run("cargo", "clippy", "-p", "speechfoundry", "-p", "speechfoundry-python", "-p", "speechfoundry-node",
+            "--all-targets", "--features", f"speechfoundry/{feature},speechfoundry-python/{feature},speechfoundry-node/{feature}",
             "--locked", "--", "-D", "warnings", cwd=staged, env=env)
-        run("cargo", "doc", "-p", "candle-tts", "--features", feature,
+        run("cargo", "doc", "-p", "speechfoundry", "--features", feature,
             "--no-deps", "--locked", cwd=staged, env=env)
         # External CUDA libraries are intentional. These are platform wheels for
         # direct installation, never mislabeled as self-contained manylinux wheels.
@@ -170,7 +191,7 @@ def build(variant: str, output: Path) -> None:
                 str(files[0]), cwd=ROOT)
             env["PYTHONPATH"] = temporary
             smoke = (ROOT / "bindings/python/tests/smoke.py").read_text(encoding="utf-8")
-            smoke = smoke.replace("from candle_tts import", f"from {names(variant)[1]} import")
+            smoke = smoke.replace("from speechfoundry import", f"from {names(variant)[1]} import")
             run(sys.executable, "-c", smoke, cwd=ROOT, env=env)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     report = {

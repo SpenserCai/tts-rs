@@ -1,9 +1,9 @@
-# Maintaining tts-rs
+# Maintaining SpeechFoundry
 
 ## Contract
 
-This repository implements local speech inference. `candle-tts` is the public
-Rust package; `tts-rs` is the repository name. Preserve a small portable core,
+This repository implements local speech inference. `speechfoundry` is the public
+Rust and Python package; the repository URL remains `SpenserCai/tts-rs`. Preserve a small portable core,
 independent model crates, and thin language bindings. Model conditioning is not
 a universal speaker identity. Never cast one model's voice prompt into another.
 
@@ -13,17 +13,32 @@ or model card is not a substitute for reading the executed Python path.
 
 ## Boundaries
 
-- `tts-core`: finite mono PCM, audio I/O/resampling, validated contracts. No
+- `speechfoundry-core`: finite mono PCM, audio I/O/resampling, validated contracts. No
   model weights, Candle tensors, Python, Node, network clients, or GPU runtime.
-- `tts-qwen`, `tts-cosyvoice`: inference, configuration, preprocessing, cache and
+- `speechfoundry-qwen`, `speechfoundry-cosyvoice`: inference, configuration, preprocessing, cache and
   model-specific payloads. Share a primitive only when its math and semantics
   actually match. Do not force unrelated codec or mel pipelines together.
-- `candle-tts`: public session orchestration, checkpoint identity and adapters.
+- `speechfoundry`: public session orchestration, checkpoint identity and adapters.
 - `bindings/*`: conversion, ownership, error translation and worker dispatch.
   Do not reimplement model math here. Python releases the GIL; Node moves model
   work to workers. Browser inference must use explicit bytes and a Worker.
 - `scripts/reference`: pinned upstream oracle, reproducible tensor exports,
   model validation and benchmarks. Downloads and recordings are not source.
+
+Keep public Python `speechfoundry` and Node `@spensercai/speechfoundry` imports
+independent of CUDA versions and Rust implementation details. Native preview
+packages are private backends, not alternate application APIs. Discover installed
+backends from metadata without importing GPU libraries. Validate distribution
+and compiled versions and the binding protocol before model loading. Missing or
+ambiguous backends fail explicitly; no CPU fallback or trial loading different
+CUDA ABIs. Test the real installed facade, not only the generated native addon.
+
+Future ASR/STT or other speech tasks get task-appropriate contracts alongside
+synthesis, not fake `synthesize` adapters. Extract shared contracts only when
+real callers need them; do not add empty registries or speculative layers.
+Names are not persisted formats: retain the checkpoint hash domain and existing
+voice-prompt schemas across branding changes. Historical validation reports and
+upstream provenance retain the identities of the revisions they measured.
 
 ## Rust quality gate
 
@@ -37,6 +52,9 @@ Every supported build must have zero errors and zero warnings. Do not add
 crate-wide `allow(warnings)`, silence a failed test, or change numeric tolerances
 just to obtain a green result. Targeted allowances need a local technical reason.
 Do not use `--all-features`: CUDA and Metal have different system prerequisites.
+Filesystem tests must own isolated temporary directories. Create missing paths
+inside those directories; never assume a global path such as `/tmp` exists or
+is empty. Keep error assertions specific and include the observed error on failure.
 
 Public entry points validate shapes, ranges, finite values, sample rates,
 configuration versions and checkpoint compatibility. Invalid inputs return
@@ -79,7 +97,7 @@ workspace version. Publish npm candidates to `next`, never `latest`, and mark th
 GitHub release as a prerelease. Stable versions retain the normal channels.
 
 Accelerator previews are isolated wheel/tarball GitHub assets, not default registry
-packages. Preserve the CPU import namespace and use separate backend namespaces;
+packages. Preserve the public import namespace and use private backend namespaces;
 never replace CPU binaries with CUDA-linked ones. Do not publish GPU previews to
 PyPI/npm before hardware validation. Build reports must distinguish compilation,
 portable import tests and actual GPU execution. Co-installation tests must verify
@@ -119,6 +137,9 @@ sources, after checking that repackaged archives match the verified artifacts.
 Registry jobs use repository secrets `CARGO_REGISTRY_TOKEN`, `NPM_TOKEN`
 and `PYPI_API_TOKEN`. Preflight may check presence only; do not print or export
 credential values. Only the corresponding publisher uses each credential.
+For a new distribution name, confirm these credentials can create the new
+projects; a token scoped only to an old project is insufficient. Never assume
+renaming a package transfers registry ownership or extends token permissions.
 After all registry uploads succeed, upload the tested distributions to a GitHub draft,
 verify every asset digest, then publish the complete release with checksums. A retry
 may add only missing identical assets, never replace existing ones. Partial registry

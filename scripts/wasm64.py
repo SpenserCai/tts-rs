@@ -46,17 +46,17 @@ def environment() -> dict[str, str]:
 
 def cargo(command: str, *extra: str) -> None:
     run("cargo", f"+{TOOLCHAIN}", command, "-Z", "build-std=std,panic_abort", "--locked", "--target", TARGET,
-        "-p", "tts-wasm", "--features", "qwen-synthesis", *extra, env=environment())
+        "-p", "speechfoundry-wasm", "--features", "qwen-synthesis", *extra, env=environment())
 
 
 def package_metadata(directory: Path, web: bool) -> None:
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
     package = {
-        "name": "@spensercai/tts-wasm64", "version": version,
+        "name": "@spensercai/speechfoundry-wasm64", "version": version,
         "description": "Memory64 Candle Qwen3-TTS inference with explicit checkpoint bytes",
         "license": "MIT", "repository": "github:SpenserCai/tts-rs",
-        "type": "module" if web else "commonjs", "main": "tts_wasm.js", "types": "tts_wasm.d.ts",
-        "files": ["tts_wasm.js", "tts_wasm.d.ts", "tts_wasm_bg.wasm", "tts_wasm_bg.wasm.d.ts", "loader.mjs", "snippets", "README.md", "licenses"],
+        "type": "module" if web else "commonjs", "main": "speechfoundry_wasm.js", "types": "speechfoundry_wasm.d.ts",
+        "files": ["speechfoundry_wasm.js", "speechfoundry_wasm.d.ts", "speechfoundry_wasm_bg.wasm", "speechfoundry_wasm_bg.wasm.d.ts", "loader.mjs", "snippets", "README.md", "licenses"],
         "sideEffects": False, "engines": {"node": ">=24"},
     }
     (directory / "package.json").write_text(json.dumps(package, indent=2) + "\n")
@@ -113,7 +113,7 @@ def build() -> None:
     cargo("build", "--release")
     target = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
     if not target.is_absolute(): target = ROOT / target
-    binary = target / TARGET / "release/tts_wasm.wasm"
+    binary = target / TARGET / "release/speechfoundry_wasm.wasm"
     for directory, platform in [(WEB, "web"), (NODE, "nodejs")]:
         if directory.exists(): shutil.rmtree(directory)
         run(bindgen, str(binary), "--out-dir", str(directory), "--target", platform)
@@ -138,7 +138,7 @@ def main() -> None:
         smoke()
     elif args.command == "smoke": smoke()
     else:
-        if not (WEB / "tts_wasm_bg.wasm").is_file(): raise SystemExit("Build and test memory64 before packaging")
+        if not (WEB / "speechfoundry_wasm_bg.wasm").is_file(): raise SystemExit("Build and test memory64 before packaging")
         manifest = json.loads((WEB / "package.json").read_text())
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         if manifest["version"] != version: raise SystemExit("Stale memory64 package version")

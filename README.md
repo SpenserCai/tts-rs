@@ -1,14 +1,14 @@
 <div align="center">
 
-# tts-rs
+# SpeechFoundry
 
-**Local voices. Explicit models. One Rust interface.**
+**Local speech. Independent models. One API across runtimes.**
 
-[![crates.io](https://img.shields.io/crates/v/candle-tts?logo=rust)](https://crates.io/crates/candle-tts)
-[![PyPI](https://img.shields.io/pypi/v/candle-tts?logo=python)](https://pypi.org/project/candle-tts/)
-[![Node.js](https://img.shields.io/npm/v/%40spensercai%2Ftts-rs?logo=npm&label=Node.js)](https://www.npmjs.com/package/@spensercai/tts-rs)
-[![WASM32](https://img.shields.io/npm/v/%40spensercai%2Ftts-wasm?label=WASM32)](https://www.npmjs.com/package/@spensercai/tts-wasm)
-[![WASM64](https://img.shields.io/npm/v/%40spensercai%2Ftts-wasm64?label=WASM64)](https://www.npmjs.com/package/@spensercai/tts-wasm64)
+[![crates.io](https://img.shields.io/crates/v/speechfoundry?logo=rust)](https://crates.io/crates/speechfoundry)
+[![PyPI](https://img.shields.io/pypi/v/speechfoundry?logo=python)](https://pypi.org/project/speechfoundry/)
+[![Node.js](https://img.shields.io/npm/v/%40spensercai%2Fspeechfoundry?logo=npm&label=Node.js)](https://www.npmjs.com/package/@spensercai/speechfoundry)
+[![WASM32](https://img.shields.io/npm/v/%40spensercai%2Fspeechfoundry-wasm?label=WASM32)](https://www.npmjs.com/package/@spensercai/speechfoundry-wasm)
+[![WASM64](https://img.shields.io/npm/v/%40spensercai%2Fspeechfoundry-wasm64?label=WASM64)](https://www.npmjs.com/package/@spensercai/speechfoundry-wasm64)
 
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-DEA584?logo=rust)](Cargo.toml)
 [![Candle](https://img.shields.io/badge/inference-Candle-FFD21E)](https://github.com/huggingface/candle)
@@ -21,11 +21,14 @@ Qwen3-TTS · CosyVoice3 · Python · Node.js · WebAssembly
 
 </div>
 
-`candle-tts` is a modular, local-inference speech library built with Hugging Face
+`speechfoundry` is a modular, local-inference speech library built with Hugging Face
 Candle. It separates model-specific voice conditioning and speech synthesis from
 audio utilities, application interfaces, and language runtimes.
 
-The repository is named **tts-rs**; the Rust and Python package is **candle-tts**.
+Rust and Python use **speechfoundry**; Node uses **@spensercai/speechfoundry**.
+The repository URL remains `SpenserCai/tts-rs`. The architecture supports adding
+other speech tasks without tying the public name to TTS or a tensor backend;
+ASR/STT models are not implemented in this release.
 Models run locally, and model weights and recordings stay outside the packages.
 Choose a model and runtime from the support matrix below; numerical evidence is
 recorded per component and device.
@@ -65,10 +68,10 @@ checks, and no numerical tolerance has been relaxed.
 
 | Package | Responsibility |
 | --- | --- |
-| `candle-tts` | Unified `Engine`, checkpoint identity, persisted voice prompts |
-| `tts-core` | Mono PCM, WAV, band-limited resampling, portable contracts |
-| `tts-qwen` | Qwen3 speaker encoder, Talker, code predictor and 12 Hz codec |
-| `tts-cosyvoice` | CosyVoice3 frontend, Qwen2, conditional flow and HiFT |
+| `speechfoundry` | Unified `Engine`, checkpoint identity, persisted voice prompts |
+| `speechfoundry-core` | Mono PCM, WAV, band-limited resampling, portable contracts |
+| `speechfoundry-qwen` | Qwen3 speaker encoder, Talker, code predictor and 12 Hz codec |
+| `speechfoundry-cosyvoice` | CosyVoice3 frontend, Qwen2, conditional flow and HiFT |
 | Python / Node | Native bindings with blocking inference off the interpreter |
 | WASM | Explicit portable components and optional model capabilities |
 
@@ -81,13 +84,13 @@ audio tokens, mel features and a matching transcript.
 
 ```toml
 [dependencies]
-candle-tts = "0.1"
+speechfoundry = "0.2"
 ```
 
 ```rust,no_run
-use candle_tts::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions};
+use speechfoundry::{Audio, DeviceConfig, Engine, ModelKind, SynthesisOptions};
 
-fn main() -> candle_tts::Result<()> {
+fn main() -> speechfoundry::Result<()> {
     let reference = Audio::read_wav(std::fs::File::open("reference.wav")?)?;
     let mut engine = Engine::load("models/qwen-base", ModelKind::Qwen3, DeviceConfig::Cpu)?;
     let voice = engine.extract_voice(&reference.samples, reference.sample_rate, None)?;
@@ -109,24 +112,42 @@ the unified voice-prompt API targets cloning, not every model-specific mode.
 ## Bindings
 
 CUDA/Metal **preview wheels and Node tarballs** are distributed as explicit
-GitHub Release assets. They use separate package/import
-names and can coexist with the CPU packages. See the
+GitHub Release assets. They install as private backend packages and coexist with
+the CPU package; application imports stay `speechfoundry` and
+`@spensercai/speechfoundry` for every native device. See the
 [accelerator matrix and installation guide](docs/accelerators.md) for runtime
 requirements and the build-only validation boundary. They are not GPU-certified
 replacements for the default packages; browser WASM packages remain CPU-only.
 
+After installing a matching preview, select `"cuda:0"` or `"metal:0"` when loading
+an engine. A single installed matching backend is selected automatically. With
+several CUDA builds installed, select `backend="cu124"` in Python or
+`{ backend: 'cu124' }` as Node's fourth `loadEngine` argument. This selects a build,
+not a different import. Missing backends and version conflicts are errors.
+
+### Migrating from 0.1.x
+
+Version 0.2.0 replaces `candle-tts` / `candle_tts` and `@spensercai/tts-rs` with
+the names above. Rust model crates now use the `speechfoundry-` prefix. WebAssembly
+packages become `@spensercai/speechfoundry-wasm` and
+`@spensercai/speechfoundry-wasm64`. Install the same version for the facade and
+each accelerator preview; old GPU packages are not discovered by the new facade.
+Previously published 0.1.x packages remain unchanged. Existing voice-prompt JSON
+and checkpoint fingerprints retain their format and can be reused with identical
+model files. This migration does not change inference math or extend GPU validation.
+
 Install the native CPU packages:
 
 ```sh
-python -m pip install candle-tts
-npm install @spensercai/tts-rs
+python -m pip install speechfoundry
+npm install @spensercai/speechfoundry
 ```
 
 Python requires CPython 3.10+; Node.js requires 22+. Both expose the same model
 families, explicit device selection and portable voice-prompt JSON:
 
 ```python
-from candle_tts import Engine
+from speechfoundry import Engine
 
 engine = Engine.load("models/qwen-base", "qwen3", "cpu")
 # reference_pcm: mono floating-point samples at the stated sample rate.
@@ -136,7 +157,7 @@ samples, sample_rate = speech.samples, speech.sample_rate
 ```
 
 ```js
-import { loadEngine } from '@spensercai/tts-rs'
+import { loadEngine } from '@spensercai/speechfoundry'
 
 const engine = await loadEngine('models/qwen-base', 'qwen3', 'cpu')
 // referencePcm: Float32Array of mono PCM at the stated sample rate.
@@ -152,14 +173,14 @@ CosyVoice. Prompts are specific to the model checkpoint that created them.
 
 Runtime details, source builds and executable smoke tests live next to each binding:
 
-- [Python](bindings/python/README.md): PyO3 + maturin; import `candle_tts`.
+- [Python](bindings/python/README.md): PyO3 + maturin; import `speechfoundry`.
 - [Node.js](bindings/node/README.md): napi-rs; asynchronous native model work.
 - [WASM](bindings/wasm/README.md): wasm-bindgen; query `capabilities()` rather than
   assuming that a browser build has native accelerator or full-model support.
 
-WebAssembly has two explicit packages: `@spensercai/tts-wasm` provides portable
+WebAssembly has two explicit packages: `@spensercai/speechfoundry-wasm` provides portable
 audio operations and Qwen speaker extraction using 32-bit memory;
-`@spensercai/tts-wasm64` provides Qwen synthesis using WebAssembly Memory64.
+`@spensercai/speechfoundry-wasm64` provides Qwen synthesis using WebAssembly Memory64.
 The latter requires a Memory64-capable runtime, Node.js 24+ for Node use, and
 enough physical memory for weights, caches and activations. Neither package
 bundles weights or implements CosyVoice's ONNX frontend. Load model bytes
@@ -188,7 +209,7 @@ dependency for CosyVoice reference extraction, not an undeclared bundled library
 Qwen expects a local official Base checkpoint with its speech tokenizer under
 `speech_tokenizer/`. CosyVoice uses converted safetensors plus its complete text
 tokenizer and ONNX frontend graphs. Its conversion tool is
-[`crates/tts-cosyvoice/scripts/convert.py`](crates/tts-cosyvoice/scripts/convert.py).
+[`crates/speechfoundry-cosyvoice/scripts/convert.py`](crates/speechfoundry-cosyvoice/scripts/convert.py).
 Keep source revisions and weight digests with every experiment.
 
 The reference suite installs pinned official Python implementations, exports
@@ -259,8 +280,8 @@ identical uploads. Do not rebuild a reserved version or move its tag. See the
 ## Attribution
 
 New project code is MIT licensed. Imported implementations retain their upstream
-licenses and attribution: [Qwen provenance](crates/tts-qwen/UPSTREAM.md),
-[CosyVoice provenance](crates/tts-cosyvoice/UPSTREAM.md). The authoritative models
+licenses and attribution: [Qwen provenance](crates/speechfoundry-qwen/UPSTREAM.md),
+[CosyVoice provenance](crates/speechfoundry-cosyvoice/UPSTREAM.md). The authoritative models
 are [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS) and
 [CosyVoice](https://github.com/QwenAudio/CosyVoice). Model weights have separate
 model-card licenses.

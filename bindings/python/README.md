@@ -1,4 +1,4 @@
-# tts-rs for Python
+# SpeechFoundry for Python
 
 Thin [PyO3](https://pyo3.rs/) bindings over the same native Rust engine. Model loading,
 voice extraction, synthesis, and resampling release the Python interpreter lock.
@@ -7,16 +7,16 @@ independent inference state is needed.
 
 CosyVoice3 is experimental: full-Flow numerical parity remains unresolved, and
 reported output artifacts include an unrelated leading sound and elongated
-endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#tts-rs)
+endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#speechfoundry)
 before using that model. The binding uses the same model implementation as Rust.
 
 ```sh
-python -m pip install candle-tts
+python -m pip install speechfoundry
 ```
 
 ```python
 import json
-from candle_tts import Engine
+from speechfoundry import Engine
 
 engine = Engine.load("/models/Qwen3-TTS-12Hz-0.6B-Base", "qwen3", "cpu")
 # reference_pcm is mono float32 PCM; pass the actual recording sample rate.
@@ -35,6 +35,26 @@ copies them to a Python list; no NumPy runtime dependency is required.
 The default wheel is CPU-only. Build from source with `--features cuda` or
 `--features metal` for a matching toolchain and target. A feature-enabled binary
 does not imply a compatible accelerator exists on the current machine.
+
+For prebuilt GPU previews, install the same-version backend wheel from GitHub
+Releases **alongside** this package. The import remains unchanged:
+
+```python
+from speechfoundry import Engine, installed_backends
+
+print(installed_backends())  # Installed builds, not a hardware readiness test.
+gpu = Engine.load("models/qwen-base", "qwen3", "cuda:0")
+# With several CUDA builds installed, add backend="cu124".
+# On Apple Silicon use device="metal:0" with the matching Metal preview.
+```
+
+Backend distribution names identify CUDA builds, but are not application import
+names. Missing/ambiguous backends and version mismatches are explicit errors.
+CPU imports never load accelerator libraries. See the
+[accelerator guide](https://github.com/SpenserCai/tts-rs/blob/main/docs/accelerators.md)
+for installation and native runtime requirements. GPU previews remain build-verified,
+not GPU-parity-certified. Version 0.2 replaces the old `candle_tts` import;
+existing voice-prompt JSON retains its schema and checkpoint identity.
 
 CosyVoice3's official frontend additionally requires the **CPU ONNX Runtime
 shared library, API 24 or newer**. Set `ORT_DYLIB_PATH` to its absolute path before
@@ -78,5 +98,5 @@ documented in the repository root.
 ```sh
 python -m pip install 'maturin>=1.12,<2'
 python -m maturin develop --release --manifest-path bindings/python/Cargo.toml
-python bindings/python/tests/smoke.py
+python -m unittest discover -s bindings/python/tests -p '*.py'
 ```

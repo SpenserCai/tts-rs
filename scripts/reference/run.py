@@ -97,13 +97,13 @@ def main() -> int:
                        "--device", args.device, "--frames", "41"]
             if weights is not None:
                 command += ["--weights", str(weights)]
-            package, example, weight_file = "tts-qwen", "speaker_oracle", "speaker.safetensors"
+            package, example, weight_file = "speechfoundry-qwen", "speaker_oracle", "speaker.safetensors"
             scope = "Qwen ECAPA speaker encoder, excludes frontend and synthesis"
         else:
             source = args.cosyvoice_source or args.environment / "cosyvoice"
             command = [sys.executable, str(Path(__file__).with_name("export_cosyvoice.py")),
                        "--source", str(source), "--output", str(args.output), "--device", args.device]
-            package, example, weight_file = "tts-cosyvoice", "embeddings_oracle", "conditioning.safetensors"
+            package, example, weight_file = "speechfoundry-cosyvoice", "embeddings_oracle", "conditioning.safetensors"
             scope = "CosyVoice DiT conditioning modules; excludes full DiT, flow and vocoder"
         subprocess.run(model_command(command, args.offline_reference), check=True)
         cargo = ["cargo", "build", "--locked", "-p", package, "--example", example, "--release"]

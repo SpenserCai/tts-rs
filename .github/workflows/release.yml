@@ -142,8 +142,8 @@ jobs:
         with:
           name: release-node-loader
           path: |
-            bindings/node/index.js
-            bindings/node/index.d.ts
+            bindings/node/_native.js
+            bindings/node/_native.d.ts
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -426,7 +426,7 @@ jobs:
           if len(previews) != expected:
               raise SystemExit("Incomplete accelerator co-installation matrix")
           subprocess.run([sys.executable, "-m", "pip", "install", "--no-deps", *map(str, previews)], check=True)
-          subprocess.run([sys.executable, "bindings/python/tests/smoke.py"], check=True)
+          subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "bindings/python/tests", "-p", "*.py"], check=True)
           PY
 
   claim-tag:

@@ -15,7 +15,7 @@
 *.whl
 *.safetensors
 *.onnx
-!crates/tts-cosyvoice/tests/fixtures/explicit_padding_average.onnx
+!crates/speechfoundry-cosyvoice/tests/fixtures/explicit_padding_average.onnx
 *.pt
 *.wav
 !tests/fixtures/**/*.wav

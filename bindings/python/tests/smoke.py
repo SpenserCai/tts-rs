@@ -4,7 +4,7 @@ import json
 import math
 import unittest
 
-from candle_tts import Audio, Engine, validate_voice_prompt
+from speechfoundry import Audio, Engine, validate_voice_prompt
 
 
 class BindingSmokeTests(unittest.TestCase):

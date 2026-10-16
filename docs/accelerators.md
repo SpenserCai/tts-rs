@@ -8,54 +8,64 @@ CUDA redistributables or ONNX Runtime library are bundled.
 
 ## Choosing a package
 
-| Platform | Backend | Python distribution / import | Node tarball package |
+| Platform | Backend | Python backend distribution | Node backend tarball package |
 | --- | --- | --- | --- |
-| Linux x64 | CUDA 11.8 | `candle-tts-cu118` / `candle_tts_cu118` | `@spensercai/tts-rs-cu118-linux-x64` |
-| Linux x64 | CUDA 12.4 | `candle-tts-cu124` / `candle_tts_cu124` | `@spensercai/tts-rs-cu124-linux-x64` |
-| Linux x64 | CUDA 12.8 | `candle-tts-cu128` / `candle_tts_cu128` | `@spensercai/tts-rs-cu128-linux-x64` |
-| Windows x64 | CUDA 12.4 | `candle-tts-cu124` / `candle_tts_cu124` | `@spensercai/tts-rs-cu124-win32-x64` |
-| macOS ARM64 | Metal | `candle-tts-metal` / `candle_tts_metal` | `@spensercai/tts-rs-metal-darwin-arm64` |
+| Linux x64 | CUDA 11.8 | `speechfoundry-cu118` | `@spensercai/speechfoundry-cu118-linux-x64` |
+| Linux x64 | CUDA 12.4 | `speechfoundry-cu124` | `@spensercai/speechfoundry-cu124-linux-x64` |
+| Linux x64 | CUDA 12.8 | `speechfoundry-cu128` | `@spensercai/speechfoundry-cu128-linux-x64` |
+| Windows x64 | CUDA 12.4 | `speechfoundry-cu124` | `@spensercai/speechfoundry-cu124-win32-x64` |
+| macOS ARM64 | Metal | `speechfoundry-metal` | `@spensercai/speechfoundry-metal-darwin-arm64` |
+
+These are installation identities, not application imports. Every native device
+uses `from speechfoundry import Engine` or the `@spensercai/speechfoundry` Node
+entry point. Install the facade and the selected backend at the **same version**:
 
 Download the matching `.whl` and/or `.tgz`, and verify its SHA-256 against the
 release's `SHA256SUMS`. Install the local filename explicitly:
 
 ```sh
-python -m pip install ./candle_tts_cu124-VERSION-cp310-abi3-linux_x86_64.whl
-npm install ./spensercai-tts-rs-cu124-linux-x64-VERSION.tgz
+python -m pip install 'speechfoundry==0.2.0' ./speechfoundry_cu124-0.2.0-cp310-abi3-linux_x86_64.whl
+npm install @spensercai/speechfoundry@0.2.0 ./spensercai-speechfoundry-cu124-linux-x64-0.2.0.tgz
 ```
 
-Replace `VERSION` and the platform tag with the actual asset filename. Rust/npm
+Replace the version and platform tag with the actual asset filename. Rust/npm
 release candidates use `X.Y.Z-rc.N`; Python's equivalent spelling is `X.Y.ZrcN`.
 These are one logical workspace version, not separately maintained versions.
 For a matching CPU comparison, explicitly install the same candidate version
-(`pip install candle-tts==X.Y.ZrcN` and
-`npm install @spensercai/tts-rs@X.Y.Z-rc.N`). Ordinary unpinned installs remain
+(`pip install speechfoundry==X.Y.ZrcN` and
+`npm install @spensercai/speechfoundry@X.Y.Z-rc.N`). Ordinary unpinned installs remain
 on the stable channel. Rust users select
-`candle-tts = { version = "=X.Y.Z-rc.N", features = ["cuda"] }` or `metal`;
+`speechfoundry = { version = "=X.Y.Z-rc.N", features = ["cuda"] }` or `metal`;
 Cargo builds the selected backend from source using the local toolkit.
 
 ```python
-from candle_tts import Engine as CpuEngine
-from candle_tts_cu124 import Engine as CudaEngine
-# On Apple Silicon: from candle_tts_metal import Engine as MetalEngine
+from speechfoundry import Engine, installed_backends
 
-cpu = CpuEngine.load("models/qwen-base", "qwen3", "cpu")
-gpu = CudaEngine.load("models/qwen-base", "qwen3", "cuda:0")
-# metal = MetalEngine.load("models/qwen-base", "qwen3", "metal:0")
+print(installed_backends())  # Metadata only; not a GPU execution test.
+cpu = Engine.load("models/qwen-base", "qwen3", "cpu")
+gpu = Engine.load("models/qwen-base", "qwen3", "cuda:0")
+# Multiple CUDA builds installed: add backend="cu124".
+# Apple Silicon: Engine.load("models/qwen-base", "qwen3", "metal:0")
 ```
 
 ```js
-const cpu = require('@spensercai/tts-rs')
-const gpu = require('@spensercai/tts-rs-cu124-linux-x64')
-const engine = await gpu.loadEngine('models/qwen-base', 'qwen3', 'cuda:0')
+import { loadEngine } from '@spensercai/speechfoundry'
+const engine = await loadEngine('models/qwen-base', 'qwen3', 'cuda:0')
+// Multiple CUDA builds installed: pass { backend: 'cu124' } as argument four.
 ```
 
-GPU packages retain CPU execution via an explicit `cpu` device, **but importing a
-CUDA package still needs its native CUDA dependencies**. Use the ordinary CPU
-package on a machine without them. Merely installing a GPU preview must not break
-CPU imports. Different CUDA packages can coexist on disk, but test CUDA versions
-in separate processes: the OS loader can reuse same-SONAME CUDA libraries in a
-process. Distinct Python import names cannot isolate native library ABIs.
+The facade always uses its ordinary CPU binary for `cpu`. GPU libraries load only
+when a matching device is explicitly requested. One installed backend is selected
+automatically; multiple CUDA builds require a build choice, not a different import.
+Discovery does not inspect drivers or guess the newest compatible CUDA version.
+Missing runtimes, ambiguous selection and mismatched versions fail explicitly.
+
+Different CUDA packages coexist on disk, but the facade prevents selecting more
+than one CUDA build in a process, even after a failed native import. Test another
+CUDA version in a new process: the OS loader can reuse same-SONAME CUDA libraries,
+and Python/Node namespaces cannot isolate native ABIs. CPU and the selected GPU
+remain independently usable. Source-built accelerator-enabled facade binaries
+can use their compiled `cuda` / `metal` backend without an additional preview.
 
 ## Runtime prerequisites and validation
 
@@ -69,7 +79,7 @@ process. Distinct Python import names cannot isolate native library ABIs.
 - Windows CUDA previews need the matching runtime DLLs discoverable by the loader
   and the Visual C++ runtime. For Python 3.10+, retain an
   `os.add_dll_directory(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4\bin")`
-  handle **before** importing the CUDA package. Node uses the configured DLL search
+  handle **before** loading a CUDA engine. Node uses the configured DLL search
   path, including `PATH`. Do not copy arbitrary DLLs into the package.
 - Metal previews require Apple Silicon macOS with a usable Metal device.
 - CosyVoice reference extraction still requires external CPU ONNX Runtime via
@@ -96,9 +106,12 @@ the existing tensor tolerances to declare GPU parity.
 through separate indexes while retaining one `torch` import namespace. That does
 not give two independent installations in the same environment.
 [TensorFlow.js](https://github.com/tensorflow/tfjs/blob/master/tfjs-node/README.md)
-uses distinct native CPU and GPU packages. Here, both Python distribution **and
-import namespace**, and each Node backend/platform package, are distinct. They are
-generated from the same tracked Rust models; no model implementation is forked.
+uses distinct native CPU and GPU packages. Here, accelerator distribution names
+and private native namespaces are distinct, behind one stable application API.
+Python uses standard distribution entry points; Node reads the installed backend
+manifest. The loader checks distribution version, compiled version and wrapper
+protocol before model loading. All packages are generated from the same tracked
+Rust models; no model implementation is forked.
 
 WASM32 and WASM64 remain separately packaged CPU targets. Memory64 increases the
 address space; it does not add WebGPU. No CUDA or Metal feature is enabled for
