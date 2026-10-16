@@ -478,16 +478,21 @@ mod tests {
 
     #[test]
     fn test_from_pretrained_nonexistent() {
-        // Should fail for non-existent path
-        let result = TextTokenizer::from_pretrained("/nonexistent/path");
-        assert!(result.is_err());
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing-model");
+        let err = TextTokenizer::from_pretrained(missing.to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("provide a local tokenizer directory"), "{err}");
     }
 
     #[test]
     fn test_from_file_nonexistent() {
-        // Should fail for non-existent file
-        let result = TextTokenizer::from_file("/nonexistent/tokenizer.json");
-        assert!(result.is_err());
+        let root = tempfile::tempdir().unwrap();
+        let err = TextTokenizer::from_file(root.path().join("tokenizer.json"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Failed to load tokenizer"), "{err}");
     }
 
     #[test]
@@ -511,11 +516,12 @@ mod tests {
 
     #[test]
     fn test_from_pretrained_dir_no_tokenizer_files() {
-        // A directory that exists but has no tokenizer files should give a clear error
-        let result = TextTokenizer::from_pretrained("/tmp");
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("No tokenizer files found"));
+        // Own an empty directory on every OS, independent of shared temporary files.
+        let root = tempfile::tempdir().unwrap();
+        let err = TextTokenizer::from_pretrained(root.path().to_str().unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("No tokenizer files found"), "{err}");
     }
 }
 

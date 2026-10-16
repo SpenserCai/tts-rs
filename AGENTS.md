@@ -52,6 +52,9 @@ Every supported build must have zero errors and zero warnings. Do not add
 crate-wide `allow(warnings)`, silence a failed test, or change numeric tolerances
 just to obtain a green result. Targeted allowances need a local technical reason.
 Do not use `--all-features`: CUDA and Metal have different system prerequisites.
+Filesystem tests must own isolated temporary directories. Create missing paths
+inside those directories; never assume a global path such as `/tmp` exists or
+is empty. Keep error assertions specific and include the observed error on failure.
 
 Public entry points validate shapes, ranges, finite values, sample rates,
 configuration versions and checkpoint compatibility. Invalid inputs return
