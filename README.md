@@ -108,8 +108,8 @@ the unified voice-prompt API targets cloning, not every model-specific mode.
 
 ## Bindings
 
-CUDA/Metal **preview wheels and Node tarballs** are available with release
-candidates as explicit GitHub Release assets. They use separate package/import
+CUDA/Metal **preview wheels and Node tarballs** are distributed as explicit
+GitHub Release assets. They use separate package/import
 names and can coexist with the CPU packages. See the
 [accelerator matrix and installation guide](docs/accelerators.md) for runtime
 requirements and the build-only validation boundary. They are not GPU-certified

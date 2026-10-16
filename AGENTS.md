@@ -127,6 +127,12 @@ run, not **Re-run all jobs**, so publishers reuse the original artifacts. Publis
 skip only archives whose registry digest exactly matches and reject conflicting or
 yanked files. Do not rebuild an already uploaded version and blindly skip it;
 new build metadata can change wheel/npm hashes even for the same source commit.
+Read Cargo archive identities from their normalized `Cargo.toml`, validate the
+filename against that identity, and run this validation before publication.
+Never split archive filenames on hyphens to infer package names or versions:
+both crate names and SemVer prereleases can contain hyphens. Release regressions
+must exercise the actual publication-selection path for stable and candidate
+versions, including identical retries, checksum conflicts and yanked packages.
 Do not create release tags, merge branches, publish packages or configure secrets as a side effect of
 routine development. A requested development task may be delivered in a branch
 or draft PR without publication.

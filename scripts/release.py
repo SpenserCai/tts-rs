@@ -64,6 +64,25 @@ def registry_document(url: str) -> dict | None:
         raise
 
 
+def crate_identity(path: Path) -> tuple[str, str]:
+    """Read Cargo's normalized manifest; filenames cannot delimit SemVer prereleases."""
+    with tarfile.open(path) as archive:
+        manifests = [member for member in archive.getmembers()
+                     if member.name == f"{path.stem}/Cargo.toml"]
+        if len(manifests) != 1 or not manifests[0].isfile():
+            raise SystemExit(f"Expected one regular Cargo manifest: {path.name}")
+        stream = archive.extractfile(manifests[0])
+        if stream is None:
+            raise SystemExit(f"Missing Cargo manifest: {path.name}")
+        package = tomllib.loads(stream.read().decode("utf-8")).get("package", {})
+    name, version = package.get("name"), package.get("version")
+    if not isinstance(name, str) or not name or not isinstance(version, str) or not version:
+        raise SystemExit(f"Cargo archive requires resolved package name/version: {path.name}")
+    if path.name != f"{name}-{version}.crate":
+        raise SystemExit(f"Cargo archive filename/manifest mismatch: {path.name}")
+    return name, version
+
+
 def preflight(tag: str, publish: bool) -> None:
     version = check_version()
     if tag != f"v{version}":
@@ -99,8 +118,11 @@ def rust_packages(publish: bool, artifacts: Path | None = None) -> None:
                 raise SystemExit(f"Repackaged Cargo archive differs from the verified artifact: {verified.name}")
         pending = []
         for path in sorted((artifacts / "crates").glob("*.crate")):
-            name, version = path.stem.rsplit("-", 1)
-            document = registry_document(f"https://crates.io/api/v1/crates/{name}/{version}")
+            name, version = crate_identity(path)
+            document = registry_document(
+                f"https://crates.io/api/v1/crates/{urllib.parse.quote(name, safe='')}/"
+                f"{urllib.parse.quote(version, safe='')}"
+            )
             if document is None:
                 pending.extend(("--package", name))
             elif document["version"].get("yanked") or document["version"].get("checksum") != hashlib.sha256(path.read_bytes()).hexdigest():
@@ -159,6 +181,7 @@ def collect_crates() -> None:
         selected[filename] = next(iter(candidates.values()))
     output.mkdir(parents=True, exist_ok=True)
     for filename, source in selected.items():
+        crate_identity(source)
         shutil.copyfile(source, output / filename)
     print(f"Collected {len(selected)} Cargo archives for {commit} in {output}")
 
@@ -256,6 +279,9 @@ def verify_distributions(directory: Path) -> None:
     if {path.name for path in (directory / "crates").glob("*.crate")} != expected_crates:
         raise SystemExit("The Cargo distribution set is incomplete or contains unexpected packages")
     for path in (directory / "crates").glob("*.crate"):
+        _, archive_version = crate_identity(path)
+        if archive_version != version:
+            raise SystemExit(f"Cargo archive version mismatch: {path.name}")
         with tarfile.open(path) as archive:
             stream = archive.extractfile(f"{path.stem}/.cargo_vcs_info.json")
             if stream is None or json.load(stream).get("git", {}).get("sha1") != commit:
