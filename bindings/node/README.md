@@ -1,4 +1,4 @@
-# tts-rs for Node.js
+# SpeechFoundry for Node.js
 
 Thin [NAPI-RS](https://napi.rs/) bindings. Loading, voice extraction, synthesis,
 prompt validation, and resampling run through `AsyncTask` on libuv workers.
@@ -7,15 +7,15 @@ event loop. Calls on one engine are serialized to protect its inference state.
 
 CosyVoice3 is experimental: full-Flow numerical parity remains unresolved, and
 reported output artifacts include an unrelated leading sound and elongated
-endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#tts-rs)
+endings. See the [project validation status](https://github.com/SpenserCai/tts-rs#speechfoundry)
 before using that model. The binding uses the same model implementation as Rust.
 
 ```sh
-npm install @spensercai/tts-rs
+npm install @spensercai/speechfoundry
 ```
 
 ```js
-import { loadEngine } from '@spensercai/tts-rs'
+import { loadEngine } from '@spensercai/speechfoundry'
 
 const engine = await loadEngine('/models/Qwen3-TTS-12Hz-0.6B-Base', 'qwen3', 'cpu')
 // referencePcm is mono Float32Array; provide its actual sample rate.
@@ -28,10 +28,30 @@ Voice conditioning is model-specific JSON with a versioned envelope. It is not
 a universal voice identity or a newly trained model. Options use the shared
 Rust schema, including validation and defaults.
 
-Node.js 22+ is the supported baseline. The build generates `index.js` and
-`index.d.ts`; each target gets its own native addon. The declared targets are
+Node.js 22+ is the supported baseline. `index.js` and `index.d.ts` are the public
+facade; the build generates private `_native.js` and `_native.d.ts` files. Each
+target gets its own native addon. The declared targets are
 Linux x64 GNU, Windows x64 MSVC, and macOS arm64. Accelerator builds require
 `--features cuda` or `--features metal` and matching native dependencies.
+
+Prebuilt GPU previews install alongside this package from GitHub Release
+tarballs. They must match the facade version; public imports never change:
+
+```js
+import { loadEngine, installedBackends } from '@spensercai/speechfoundry'
+
+console.log(installedBackends()) // Installed builds, not a hardware probe.
+const gpu = await loadEngine('models/qwen-base', 'qwen3', 'cuda:0')
+// With several CUDA builds installed, pass { backend: 'cu124' } as argument four.
+// Apple Silicon uses 'metal:0' and the matching Metal preview.
+```
+
+Missing or ambiguous backends and version mismatches are errors, never CPU
+fallback. CPU imports do not load accelerator libraries. Consult the
+[accelerator guide](https://github.com/SpenserCai/tts-rs/blob/main/docs/accelerators.md)
+for install/runtime details and the build-only verification boundary. Version 0.2
+replaces `@spensercai/tts-rs`; existing voice-prompt JSON remains compatible with
+identical model files.
 
 Build and runtime validation are separate: consult the root support matrix
 for the tested model/device combinations and Linux libc floor. Cross-platform

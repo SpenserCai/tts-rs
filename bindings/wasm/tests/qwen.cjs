@@ -7,7 +7,7 @@ const path = require('node:path')
 const fixtureDir = path.resolve(process.argv[2] || '')
 const packageDir = path.resolve(process.argv[3] || path.join(__dirname, '../pkg-qwen'))
 if (!process.argv[2]) throw new Error('A speaker fixture directory is required')
-const { QwenSpeakerEncoder, capabilities } = require(path.join(packageDir, 'tts_wasm.js'))
+const { QwenSpeakerEncoder, capabilities } = require(path.join(packageDir, 'speechfoundry_wasm.js'))
 assert.equal(JSON.parse(capabilities()).voice_extraction, true)
 
 const readJson = (name) => JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'))

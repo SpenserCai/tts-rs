@@ -11,13 +11,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 
 from package_licenses import stage, verify
 from version import check as check_version
 
 ROOT = Path(__file__).resolve().parents[1]
-BINDINGS = ("tts-python", "tts-node", "tts-wasm")
+BINDINGS = ("speechfoundry-python", "speechfoundry-node", "speechfoundry-wasm")
 
 
 def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
@@ -46,7 +47,7 @@ def rust_checks(device: str) -> None:
     run("cargo", "fmt", "--all", "--check", env=env)
     for feature in (None, "qwen", "cosyvoice"):
         features = ("--features", feature) if feature is not None else ()
-        run("cargo", "check", "-p", "candle-tts", "--no-default-features",
+        run("cargo", "check", "-p", "speechfoundry", "--no-default-features",
             *features, "--locked", env=env)
     run("cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings", env=env)
     excludes = [arg for package in BINDINGS for arg in ("--exclude", package)]
@@ -54,7 +55,7 @@ def rust_checks(device: str) -> None:
     run("cargo", "doc", "--workspace", "--no-deps", "--locked", env=env)
     if device != "cpu":
         # This checks backend compilation. Real GPU evaluation has its own workflow.
-        run("cargo", "clippy", "-p", "candle-tts", "--all-targets", "--features", device,
+        run("cargo", "clippy", "-p", "speechfoundry", "--all-targets", "--features", device,
             "--locked", "--", "-D", "warnings", env=env)
 
 
@@ -69,7 +70,7 @@ def python_binding() -> None:
     if len(wheels) != 1:
         raise SystemExit(f"Expected exactly one wheel; found {len(wheels)}")
     run(sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", str(wheels[0]))
-    run(sys.executable, str(ROOT / "bindings/python/tests/smoke.py"))
+    run(sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "bindings/python/tests"), "-p", "*.py")
 
 
 def node_binding() -> None:
@@ -79,25 +80,35 @@ def node_binding() -> None:
     run("npm", "test", cwd=cwd)
 
 
+def build_wasm_package(destination: Path, *options: str) -> None:
+    """Build in a fresh directory; wasm-pack treats existing package.json as dependencies."""
+    cwd = ROOT / "bindings/wasm"
+    if destination not in (cwd / "pkg", cwd / "pkg-web") or destination.is_symlink():
+        raise ValueError("Expected an owned generated WASM output directory")
+    with tempfile.TemporaryDirectory(prefix="speechfoundry-wasm-") as temporary:
+        output = Path(temporary)
+        run("wasm-pack", "build", "--out-dir", str(output), "--no-opt", *options, "--locked", cwd=cwd)
+        stage("wasm", output, npm=True)
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(output, destination)
+
+
 def wasm_binding() -> None:
     cwd = ROOT / "bindings/wasm"
     env = strict_environment()
     run("rustup", "target", "add", "wasm32-unknown-unknown")
-    run("cargo", "clippy", "-p", "tts-wasm", "--target", "wasm32-unknown-unknown",
+    run("cargo", "clippy", "-p", "speechfoundry-wasm", "--target", "wasm32-unknown-unknown",
         "--locked", "--", "-D", "warnings", env=env)
-    run("cargo", "clippy", "-p", "tts-wasm", "--target", "wasm32-unknown-unknown",
+    run("cargo", "clippy", "-p", "speechfoundry-wasm", "--target", "wasm32-unknown-unknown",
         "--features", "qwen", "--locked", "--", "-D", "warnings", env=env)
     # Keep LLVM's release optimizations, without wasm-pack downloading a separate Binaryen tool.
-    run("wasm-pack", "build", "--target", "nodejs", "--out-dir", "pkg", "--no-opt", "--locked", cwd=cwd)
+    build_wasm_package(cwd / "pkg", "--target", "nodejs")
     run("node", "--test", "tests/smoke.cjs", cwd=cwd)
-    run("wasm-pack", "build", "--target", "nodejs", "--out-dir", "pkg",
-        "--no-opt", "--features", "qwen", "--locked", cwd=cwd)
-    run("node", "-e", "require('node:assert/strict').equal(typeof require('./pkg/tts_wasm.js').QwenSpeakerEncoder, 'function')", cwd=cwd)
+    build_wasm_package(cwd / "pkg", "--target", "nodejs", "--features", "qwen")
+    run("node", "-e", "require('node:assert/strict').equal(typeof require('./pkg/speechfoundry_wasm.js').QwenSpeakerEncoder, 'function')", cwd=cwd)
     run("node", "--test", "tests/smoke.cjs", cwd=cwd)
-    run("wasm-pack", "build", "--target", "web", "--out-dir", "pkg-web",
-        "--scope", "spensercai", "--no-opt", "--features", "qwen", "--locked", cwd=cwd)
-    stage("wasm", cwd / "pkg", npm=True)
-    stage("wasm", cwd / "pkg-web", npm=True)
+    build_wasm_package(cwd / "pkg-web", "--target", "web", "--scope", "spensercai", "--features", "qwen")
 
 
 def offline_reference(install_if_missing: bool) -> None:

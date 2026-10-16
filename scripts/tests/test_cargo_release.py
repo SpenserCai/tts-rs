@@ -26,7 +26,7 @@ class CargoPublicationTests(unittest.TestCase):
         (self.artifacts / "crates").mkdir(parents=True)
         (self.root / "target/release-crates").mkdir(parents=True)
 
-    def crate(self, name: str = "candle-tts", version: str = "0.1.2-rc.1", *,
+    def crate(self, name: str = "speechfoundry", version: str = "0.1.2-rc.1", *,
               manifest: str | None = None, copies: int = 1, link: bool = False) -> Path:
         path = self.artifacts / "crates" / f"{name}-{version}.crate"
         if manifest is None:
@@ -63,7 +63,7 @@ class CargoPublicationTests(unittest.TestCase):
             yield registry, run
 
     def test_normalized_manifest_supports_hyphens_and_semver(self) -> None:
-        for name in ("candle-tts", "tts-core", "tts-cosyvoice", "tts-qwen"):
+        for name in ("speechfoundry", "speechfoundry-core", "speechfoundry-cosyvoice", "speechfoundry-qwen"):
             for version in ("0.1.3", "0.1.2-rc.1", "1.2.3-alpha-beta.2+build.4"):
                 with self.subTest(name=name, version=version):
                     self.assertEqual(release.crate_identity(self.crate(name, version)), (name, version))
@@ -74,14 +74,14 @@ class CargoPublicationTests(unittest.TestCase):
                 release.crate_identity(self.crate(**options))
 
     def test_rejects_unresolved_or_missing_identity(self) -> None:
-        for manifest in ('[package]\nname = "candle-tts"\nversion.workspace = true\n',
+        for manifest in ('[package]\nname = "speechfoundry"\nversion.workspace = true\n',
                          '[package]\nversion = "0.1.2-rc.1"\n',
                          '[package]\nname = ""\nversion = ""\n'):
             with self.subTest(manifest=manifest), self.assertRaisesRegex(SystemExit, "resolved package"):
                 release.crate_identity(self.crate(manifest=manifest))
 
     def test_rejects_filename_manifest_disagreement(self) -> None:
-        for name, version in (("other-crate", "0.1.2-rc.1"), ("candle-tts", "0.1.3")):
+        for name, version in (("other-crate", "0.1.2-rc.1"), ("speechfoundry", "0.1.3")):
             with self.subTest(name=name, version=version), self.assertRaisesRegex(SystemExit, "filename/manifest"):
                 release.crate_identity(self.crate(manifest=f'[package]\nname="{name}"\nversion="{version}"\n'))
 
@@ -92,8 +92,8 @@ class CargoPublicationTests(unittest.TestCase):
                 path = self.crate(version=version)
                 with self.publisher(version, None) as (registry, run):
                     release.rust_packages(True, self.artifacts)
-                    registry.assert_called_once_with(f"https://crates.io/api/v1/crates/candle-tts/{version}")
-                    self.assertEqual(run.call_args.args, ("cargo", "publish", "--package", "candle-tts", "--locked"))
+                    registry.assert_called_once_with(f"https://crates.io/api/v1/crates/speechfoundry/{version}")
+                    self.assertEqual(run.call_args.args, ("cargo", "publish", "--package", "speechfoundry", "--locked"))
                 path.unlink()
 
     def test_identical_prerelease_retry_does_not_upload(self) -> None:
@@ -101,7 +101,7 @@ class CargoPublicationTests(unittest.TestCase):
         document = {"version": {"checksum": hashlib.sha256(path.read_bytes()).hexdigest(), "yanked": False}}
         with self.publisher("0.1.2-rc.1", document) as (registry, run):
             release.rust_packages(True, self.artifacts)
-            registry.assert_called_once_with("https://crates.io/api/v1/crates/candle-tts/0.1.2-rc.1")
+            registry.assert_called_once_with("https://crates.io/api/v1/crates/speechfoundry/0.1.2-rc.1")
             self.assertFalse(any(call.args[:2] == ("cargo", "publish") for call in run.call_args_list))
 
     def test_conflicting_or_yanked_archive_is_never_skipped_or_uploaded(self) -> None:

@@ -34,7 +34,7 @@ def github_api(path: str, payload: dict | None = None) -> dict | list | None:
         data=None if payload is None else json.dumps(payload).encode("utf-8"),
         headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}",
                  "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json",
-                 "User-Agent": "candle-tts-release"},
+                 "User-Agent": "speechfoundry-release"},
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
@@ -127,11 +127,11 @@ def run_marker(commit: str) -> str:
     run_id = os.environ.get("GITHUB_RUN_ID", "")
     if not run_id.isdecimal():
         raise SystemExit("A GitHub Actions run ID is required for tag ownership")
-    return f"tts-rs release: {commit}; run: {run_id}"
+    return f"speechfoundry release: {commit}; run: {run_id}"
 
 
 def completion_marker(commit: str) -> str:
-    return f"<!-- tts-rs release complete: {commit} -->"
+    return f"<!-- speechfoundry release complete: {commit} -->"
 
 
 def report(outputs: dict[str, str], message: str) -> None:

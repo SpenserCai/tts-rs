@@ -2,9 +2,9 @@
 import { openAsBlob } from 'node:fs'
 import { access, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import init, * as bindings from '../pkg-memory64/tts_wasm.js'
+import init, * as bindings from '../pkg-memory64/speechfoundry_wasm.js'
 import { loadQwenModel } from '../loader.mjs'
-await init({ module_or_path: await readFile(new URL('../pkg-memory64/tts_wasm_bg.wasm', import.meta.url)) })
+await init({ module_or_path: await readFile(new URL('../pkg-memory64/speechfoundry_wasm_bg.wasm', import.meta.url)) })
 const [directory, inputPath, outputPath] = process.argv.slice(2)
 if (!directory || !inputPath || !outputPath) throw new Error('Usage: node model-memory64.mjs MODEL INPUT.json OUTPUT.json')
 const hasher = new bindings.CheckpointHasher()
@@ -32,7 +32,7 @@ try {
     if (!samples.length || !samples.every(Number.isFinite)) throw new Error('Model produced empty or nonfinite PCM')
     const result = {
       schema_version: 1,
-      metadata: { implementation: 'tts-wasm-memory64', address_bits: 64, sample_rate: audio.sampleRate,
+      metadata: { implementation: 'speechfoundry-wasm-memory64', address_bits: 64, sample_rate: audio.sampleRate,
         fingerprint: model.modelFingerprint, load_seconds: (loaded - started) / 1000,
         extraction_seconds: (conditioned - loaded) / 1000, synthesis_seconds: (performance.now() - conditioned) / 1000,
         max_rss_kib: process.resourceUsage().maxRSS },

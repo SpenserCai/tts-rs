@@ -1,6 +1,6 @@
 //! Portable WebAssembly audio and memory64 Qwen speech inference.
 
-use tts_core::{Audio, SynthesisOptions, VoicePrompt};
+use speechfoundry_core::{Audio, SynthesisOptions, VoicePrompt};
 use wasm_bindgen::prelude::*;
 
 #[cfg(feature = "qwen")]

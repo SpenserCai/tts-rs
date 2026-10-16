@@ -29,17 +29,21 @@ class AcceleratorTests(unittest.TestCase):
         with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr(f"{distribution}.dist-info/METADATA",
                              f"Name: {distribution}\nVersion: {python_version(version)}\n")
+            archive.writestr(f"{distribution}.dist-info/entry_points.txt",
+                             f"[speechfoundry.backends]\n{accelerators.MATRIX[variant][0]} = {namespace}._native\n")
             archive.writestr(f"{namespace}/__init__.py", "")
             archive.writestr(f"{namespace}/_native.abi3.so", "fixture, not machine code")
             archive.writestr("licenses/LICENSE", "fixture")
             if bad_namespace:
-                archive.writestr("candle_tts/__init__.py", "must never overwrite CPU")
+                archive.writestr("speechfoundry/__init__.py", "must never overwrite CPU")
         tgz = self.root / f"{variant}.tgz"
         metadata = {"name": npm_name, "version": version, "private": True,
+                    "speechfoundryBackend": accelerators.MATRIX[variant][0],
+                    "main": "_native.js", "types": "_native.d.ts",
                     "os": [accelerators.MATRIX[variant][3]], "cpu": [accelerators.MATRIX[variant][4]]}
         with tarfile.open(tgz, "w:gz") as archive:
             for name, data in {"package/package.json": json.dumps(metadata),
-                               "package/index.d.ts": "", "package/binding.node": "fixture"}.items():
+                               "package/_native.js": "", "package/_native.d.ts": "", "package/binding.node": "fixture"}.items():
                 content = data.encode()
                 item = tarfile.TarInfo(name)
                 item.size = len(content)
@@ -49,9 +53,9 @@ class AcceleratorTests(unittest.TestCase):
     def test_all_backend_names_are_distinct_from_default_packages(self):
         for variant in accelerators.MATRIX:
             distribution, namespace, npm = accelerators.names(variant)
-            self.assertNotEqual(distribution, "candle-tts")
-            self.assertNotEqual(namespace, "candle_tts")
-            self.assertNotEqual(npm, "@spensercai/tts-rs")
+            self.assertNotEqual(distribution, "speechfoundry")
+            self.assertNotEqual(namespace, "speechfoundry")
+            self.assertNotEqual(npm, "@spensercai/speechfoundry")
 
     def test_inspection_accepts_the_isolated_pair(self):
         version = self.pair("cu118-linux-x64")
@@ -79,9 +83,11 @@ class AcceleratorTests(unittest.TestCase):
         for source in (accelerators.ROOT / "crates").rglob("*.rs"):
             relative = source.relative_to(accelerators.ROOT)
             self.assertEqual(source.read_bytes(), (target / relative).read_bytes())
-        self.assertFalse((target / "bindings/python/python/candle_tts").exists())
-        self.assertTrue((target / "bindings/python/python/candle_tts_cu124/__init__.py").exists())
-        self.assertIn('module = "candle_tts_cu124"', (target / "bindings/python/src/lib.rs").read_text())
+        self.assertFalse((target / "bindings/python/python/speechfoundry").exists())
+        self.assertTrue((target / "bindings/python/python/_speechfoundry_cu124/__init__.py").exists())
+        self.assertIn('module = "_speechfoundry_cu124"', (target / "bindings/python/src/lib.rs").read_text())
+        self.assertIn('[project.entry-points."speechfoundry.backends"]', (target / "bindings/python/pyproject.toml").read_text())
+        self.assertNotIn("_backends", (target / "bindings/python/python/_speechfoundry_cu124/__init__.py").read_text())
 
 
 if __name__ == "__main__":

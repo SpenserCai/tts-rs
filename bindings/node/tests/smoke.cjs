@@ -2,6 +2,19 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { loadEngine, resampleAudio, validateVoicePrompt } = require('../index.js')
 
+test('ESM named imports match the CommonJS facade', async () => {
+  const esm = await import('../index.js')
+  assert.equal(esm.loadEngine, loadEngine)
+  assert.equal(esm.resampleAudio, resampleAudio)
+  assert.equal(typeof esm.Engine, 'function')
+  assert(esm.installedBackends().includes('cpu'))
+})
+
+test('facade rejects invalid device selection asynchronously', async () => {
+  await assert.rejects(loadEngine('does-not-exist', 'qwen3', 'cuda:-1'), /device/)
+  await assert.rejects(loadEngine('does-not-exist', 'qwen3', 'cpu', { backend: 'cu124' }), /CPU/)
+})
+
 test('native audio round trip uses Float32Array', async () => {
   const pcm = new Float32Array([0, 0.25, -0.25, 0])
   const result = await resampleAudio(pcm, 24000, 24000)

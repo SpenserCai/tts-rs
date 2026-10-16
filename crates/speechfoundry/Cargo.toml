@@ -1,0 +1,30 @@
+[package]
+name = "speechfoundry"
+description = "Local speech inference with independent models and portable language bindings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["qwen", "cosyvoice"]
+qwen = ["dep:speechfoundry-qwen"]
+cosyvoice = ["dep:speechfoundry-cosyvoice", "speechfoundry-cosyvoice/onnx"]
+cuda = ["candle-core/cuda", "speechfoundry-qwen?/cuda", "speechfoundry-cosyvoice?/cuda"]
+metal = ["candle-core/metal", "speechfoundry-qwen?/metal", "speechfoundry-cosyvoice?/metal"]
+
+[dependencies]
+speechfoundry-core.workspace = true
+speechfoundry-qwen = { workspace = true, optional = true }
+speechfoundry-cosyvoice = { workspace = true, optional = true }
+candle-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3.15"
+
+[lints]
+workspace = true

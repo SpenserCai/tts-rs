@@ -1,11 +1,11 @@
 [package]
-name = "tts-python"
+name = "speechfoundry-python"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Python bindings for the tts-rs speech synthesis library"
+description = "Python bindings for the speechfoundry speech synthesis library"
 publish = false
 
 [lib]
@@ -14,13 +14,13 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
-cuda = ["tts-rs/cuda"]
-metal = ["tts-rs/metal"]
+cuda = ["speechfoundry/cuda"]
+metal = ["speechfoundry/metal"]
 
 [dependencies]
 pyo3 = { version = "0.29", features = ["abi3-py310"] }
 serde_json.workspace = true
-tts-rs = { package = "candle-tts", path = "../../crates/tts" }
+speechfoundry = { path = "../../crates/speechfoundry" }
 
 [lints]
 workspace = true

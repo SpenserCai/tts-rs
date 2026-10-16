@@ -111,7 +111,7 @@ windows. The production CAMPPlus session disables only that rewrite. An authored
 small ONNX graph reproduces the defect without weights and exercises the same
 session configuration in the default workspace gate. RustFFT, float32 Hann
 windows and reflection padding also align the frontend with the pinned oracle.
-See the model's [source provenance](../crates/tts-cosyvoice/UPSTREAM.md) for the
+See the model's [source provenance](../crates/speechfoundry-cosyvoice/UPSTREAM.md) for the
 affected operations. These results do not establish full synthesis parity.
 
 CosyVoice's complete native Flow path is implemented, but **strict full-Flow
@@ -307,7 +307,7 @@ by the numerical records above.
 ## Benchmarking
 
 ```sh
-cargo bench -p tts-core --bench audio
+cargo bench -p speechfoundry-core --bench audio
 python scripts/reference/run.py --suite benchmark --model qwen --device cpu \
   --prepare-env --output artifacts/speaker-benchmark
 

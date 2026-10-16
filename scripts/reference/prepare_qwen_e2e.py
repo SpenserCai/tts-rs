@@ -53,7 +53,7 @@ def prepare(output: Path, model_dir: Path | None = None, reference_audio: Path |
     audio = reference_audio.resolve() if reference_audio else output / "conditioning-tone.wav"
     if reference_audio is None:
         write_conditioning_tone(audio)
-    subprocess.run(["cargo", "build", "--locked", "--release", "-p", "tts-qwen", "--example", "synthesis_oracle"],
+    subprocess.run(["cargo", "build", "--locked", "--release", "-p", "speechfoundry-qwen", "--example", "synthesis_oracle"],
                    cwd=ROOT, check=True)
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(ROOT / "target")))
     if not target.is_absolute():

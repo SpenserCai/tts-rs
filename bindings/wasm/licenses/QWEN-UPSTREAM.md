@@ -10,7 +10,7 @@ Changes here:
 - Local-only checkpoint loading with one deterministic speech-tokenizer directory; no CLI, download client, global trace subscriber or custom PTX RMSNorm.
 - Official attentive-pooling variance floor (`clamp(min=1e-12)`), explicit regex pre-tokenization, automatic language prefix and dynamic prefix lengths.
 - Independent acoustic-predictor sampling with official defaults; no hidden ICL repetition or maximum-length overrides.
-- Reference-length-aware KV capacity, validated generation settings and shared delay-compensated resampling from `tts-core`.
+- Reference-length-aware KV capacity, validated generation settings and shared delay-compensated resampling from `speechfoundry-core`.
 - Single-pass reference-conditioned prefill, official generation-step accounting, decoder context for streaming chunks and float64 Slaney mel-filter construction.
 - Hugging Face Mimi Q/K projection permutation to Candle's interleaved rotary layout, with a rotary equivalence regression test and encoder-stage oracle.
 - Portable speaker, mel and full synthesis oracle executables for comparison with the pinned Python implementation.

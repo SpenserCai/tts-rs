@@ -5,8 +5,8 @@ voice-prompt format. Check `JSON.parse(capabilities())` for the loaded package.
 
 | npm package | Target | Inference |
 |---|---|---|
-| `@spensercai/tts-wasm` | wasm32 | Audio utilities and Qwen speaker extraction |
-| `@spensercai/tts-wasm64` | memory64 | Complete Qwen Base voice extraction and speech synthesis |
+| `@spensercai/speechfoundry-wasm` | wasm32 | Audio utilities and Qwen speaker extraction |
+| `@spensercai/speechfoundry-wasm64` | memory64 | Complete Qwen Base voice extraction and speech synthesis |
 
 The memory64 package runs Qwen's speaker encoder, optional reference audio codec,
 text generation, acoustic prediction, and waveform decoder through Candle CPU.
@@ -26,8 +26,8 @@ and transfer buffers. Wasm32 cannot address this complete pipeline.
 ```js
 // Inside a module Worker. `files` maps original relative checkpoint filenames
 // to File/Blob objects supplied by the application (for example a directory picker).
-import init, * as bindings from '@spensercai/tts-wasm64'
-import { loadQwenModel } from '@spensercai/tts-wasm64/loader.mjs'
+import init, * as bindings from '@spensercai/speechfoundry-wasm64'
+import { loadQwenModel } from '@spensercai/speechfoundry-wasm64/loader.mjs'
 
 await init()
 const model = await loadQwenModel(bindings, files)
@@ -49,7 +49,7 @@ In Node, initialize the same published web module from explicit Wasm bytes:
 ```js
 import { readFile } from 'node:fs/promises'
 await init({ module_or_path: await readFile(new URL(
-  import.meta.resolve('@spensercai/tts-wasm64/tts_wasm_bg.wasm'),
+  import.meta.resolve('@spensercai/speechfoundry-wasm64/speechfoundry_wasm_bg.wasm'),
 )) })
 ```
 
@@ -79,7 +79,7 @@ loader's Blob reads. Release sessions with `free()` when no longer needed.
 ## Wasm32 audio and speaker components
 
 ```js
-import init, { Audio, QwenSpeakerEncoder } from '@spensercai/tts-wasm'
+import init, { Audio, QwenSpeakerEncoder } from '@spensercai/speechfoundry-wasm'
 await init()
 const audio = new Audio(referencePcm, 24000)
 const encoder = new QwenSpeakerEncoder(speakerConfigJson, speakerWeights)

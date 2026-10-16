@@ -29,7 +29,7 @@ from version import python_version
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE = ROOT / "bindings/node"
-EXCLUDED = ("tts-python", "tts-node", "tts-wasm")
+EXCLUDED = ("speechfoundry-python", "speechfoundry-node", "speechfoundry-wasm")
 
 
 def check_secrets() -> None:
@@ -54,7 +54,7 @@ def capture(*args: str, cwd: Path = ROOT) -> str:
 
 def registry_document(url: str) -> dict | None:
     """Read public registry metadata; only an explicit 404 means unpublished."""
-    request = urllib.request.Request(url, headers={"User-Agent": "candle-tts-release"})
+    request = urllib.request.Request(url, headers={"User-Agent": "speechfoundry-release"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             return json.load(response)
@@ -252,7 +252,7 @@ def verify_distributions(directory: Path) -> None:
             if len(names) != 1:
                 raise SystemExit(f"Invalid wheel metadata: {path.name}")
             metadata = BytesParser().parsebytes(wheel.read(names[0]))
-        if metadata["Name"] != "candle-tts" or metadata["Version"] != python_version(version):
+        if metadata["Name"] != "speechfoundry" or metadata["Version"] != python_version(version):
             raise SystemExit(f"Wheel version/name mismatch: {path.name}")
     npm_packages = {}
     for path in (directory / "npm").glob("*.tgz"):
@@ -266,7 +266,7 @@ def verify_distributions(directory: Path) -> None:
         npm_packages[metadata["name"]] = metadata
     facade = json.loads((NODE / "package.json").read_text(encoding="utf-8"))
     platforms = npm_packages.get(facade["name"], {}).get("optionalDependencies", {})
-    required = {facade["name"], "@spensercai/tts-wasm", "@spensercai/tts-wasm64", *platforms}
+    required = {facade["name"], "@spensercai/speechfoundry-wasm", "@spensercai/speechfoundry-wasm64", *platforms}
     if len(platforms) != len(facade["napi"]["targets"]) or any(value != version for value in platforms.values()):
         raise SystemExit("Node optional packages must use the unified exact version")
     if set(npm_packages) != required:
@@ -302,7 +302,7 @@ def runtime_manifest(output: Path) -> None:
         "default_native_backend": "CPU",
         "wasm_packages": [
             {
-                "name": "@spensercai/tts-wasm",
+                "name": "@spensercai/speechfoundry-wasm",
                 "target": "wasm32-unknown-unknown",
                 "qwen_speaker_extraction": True,
                 "speech_synthesis_models": [],
@@ -310,7 +310,7 @@ def runtime_manifest(output: Path) -> None:
                 "native_accelerators": False,
             },
             {
-                "name": "@spensercai/tts-wasm64",
+                "name": "@spensercai/speechfoundry-wasm64",
                 "target": "wasm64-unknown-unknown",
                 "qwen_speaker_extraction": True,
                 "speech_synthesis_models": ["qwen3"],
@@ -374,7 +374,7 @@ def publish_npm(directory: Path) -> None:
 def prepare_pypi(directory: Path, output: Path) -> None:
     """Resume a partial PyPI upload only when existing files have identical hashes."""
     version = check_version()
-    document = registry_document(f"https://pypi.org/pypi/candle-tts/{python_version(version)}/json")
+    document = registry_document(f"https://pypi.org/pypi/speechfoundry/{python_version(version)}/json")
     existing = {item["filename"]: item for item in (document or {}).get("urls", [])}
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
@@ -501,7 +501,7 @@ def test_wheel(directory: Path) -> None:
     if len(wheels) != 1:
         raise SystemExit(f"Expected one native wheel; got {len(wheels)}")
     run(sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-deps", str(wheels[0]))
-    run(sys.executable, str(ROOT / "bindings/python/tests/smoke.py"))
+    run(sys.executable, "-m", "unittest", "discover", "-s", str(ROOT / "bindings/python/tests"), "-p", "*.py")
 
 
 def test_node_packages(directory: Path, accelerators: Path | None = None) -> None:
@@ -541,6 +541,7 @@ def test_node_packages(directory: Path, accelerators: Path | None = None) -> Non
         if "require('../index.js')" not in source:
             raise SystemExit("Update the package smoke adapter for the changed Node smoke entry point")
         source = source.replace("require('../index.js')", f"require({json.dumps(root_name)})")
+        source = source.replace("import('../index.js')", f"import({json.dumps(root_name)})")
         (prefix / "smoke.cjs").write_text(source, encoding="utf-8")
         run("node", "--test", "smoke.cjs", cwd=prefix)
 

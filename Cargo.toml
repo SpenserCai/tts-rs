@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "bindings/python", "bindings/node", "bindings/wasm"]
-default-members = ["crates/tts-core", "crates/tts-qwen", "crates/tts-cosyvoice", "crates/tts"]
+default-members = ["crates/speechfoundry-core", "crates/speechfoundry-qwen", "crates/speechfoundry-cosyvoice", "crates/speechfoundry"]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -17,9 +17,9 @@ unsafe_op_in_unsafe_fn = "deny"
 dbg_macro = "deny"
 
 [workspace.dependencies]
-tts-core = { path = "crates/tts-core", version = "0.1.3" }
-tts-qwen = { path = "crates/tts-qwen", version = "0.1.3" }
-tts-cosyvoice = { path = "crates/tts-cosyvoice", version = "0.1.3" }
+speechfoundry-core = { path = "crates/speechfoundry-core", version = "0.2.0" }
+speechfoundry-qwen = { path = "crates/speechfoundry-qwen", version = "0.2.0" }
+speechfoundry-cosyvoice = { path = "crates/speechfoundry-cosyvoice", version = "0.2.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

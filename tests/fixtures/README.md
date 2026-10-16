@@ -24,7 +24,7 @@ evidence; rerun the evaluation scripts to validate a changed implementation.
 [`cosyvoice-frontend-validation.json`](cosyvoice-frontend-validation.json)
 records the public analytic frontend comparison and isolated ONNX pooling
 regression. The small reproducible feature tensors and authored operator graph
-live in `crates/tts-cosyvoice/tests/fixtures/`, beside their regeneration guide.
+live in `crates/speechfoundry-cosyvoice/tests/fixtures/`, beside their regeneration guide.
 
 [`cosyvoice-flow-revalidation.json`](cosyvoice-flow-revalidation.json) retains
 strict before/after failures on four identically replayed analytic inputs,

@@ -36,7 +36,7 @@ class VersionTests(unittest.TestCase):
         write(self.root, "crates/a/Cargo.toml", '[package]\nname = "a"\nversion.workspace = true\nedition.workspace = true\n')
         write(self.root, "crates/a/src/lib.rs", "//! Version fixture.\n")
         write(self.root, "Cargo.lock", 'version = 4\n[[package]]\nname = "a"\nversion = "0.1.0"\n')
-        write(self.root, "bindings/python/pyproject.toml", '[project]\nname = "candle-tts"\ndynamic = ["version"]\n')
+        write(self.root, "bindings/python/pyproject.toml", '[project]\nname = "speechfoundry"\ndynamic = ["version"]\n')
         write(self.root, "bindings/node/package.json", '{"name":"fixture", "version":"0.1.0"}')
         write(self.root, "bindings/node/package-lock.json", '{"version":"0.1.0", "packages":{"":{"version":"0.1.0"}}}')
 

@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const { createHash } = require('node:crypto')
-const wasm = require('../pkg-memory64-node/tts_wasm.js')
+const wasm = require('../pkg-memory64-node/speechfoundry_wasm.js')
 
 test('memory64 exposes the actual Qwen synthesis API and finite PCM', () => {
   const capabilities = JSON.parse(wasm.capabilities())

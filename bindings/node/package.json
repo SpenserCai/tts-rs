@@ -1,13 +1,16 @@
 {
-  "name": "@spensercai/tts-rs",
-  "version": "0.1.3",
-  "description": "Modular native speech synthesis and voice conditioning with Rust and Candle",
+  "name": "@spensercai/speechfoundry",
+  "version": "0.2.0",
+  "description": "Local speech inference with independent models and native CPU/GPU backends",
   "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "index.js",
     "index.d.ts",
+    "_native.js",
+    "_native.d.ts",
+    "backends.cjs",
     "*.node",
     "README.md",
     "licenses"
@@ -21,7 +24,7 @@
     "directory": "bindings/node"
   },
   "napi": {
-    "binaryName": "tts-rs",
+    "binaryName": "speechfoundry",
     "targets": [
       "x86_64-unknown-linux-gnu",
       "x86_64-pc-windows-msvc",
@@ -29,12 +32,13 @@
     ]
   },
   "scripts": {
-    "build": "napi build --platform --js index.js --dts index.d.ts",
-    "test": "node --test tests/smoke.cjs",
+    "build": "napi build --platform --js _native.js --dts _native.d.ts",
+    "test": "node --test tests/backends.cjs tests/engine.cjs tests/smoke.cjs && tsc --noEmit --strict --target es2022 --module node16 --moduleResolution node16 tests/types.ts",
     "artifacts": "napi artifacts",
     "create-npm-dirs": "napi create-npm-dirs"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
+    "@napi-rs/cli": "^3.0.0",
+    "typescript": "6.0.3"
   }
 }
